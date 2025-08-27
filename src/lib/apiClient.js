@@ -127,6 +127,11 @@ export const educatorAPI = {
   removeModules: (id, moduleIds) => apiCall(`/api/educators/${id}/modules`, { method: 'DELETE', body: JSON.stringify({ moduleIds }) }),
   getStudents: (id) => apiCall(`/api/educators/${id}/students`),
   getAssessments: (id) => apiCall(`/api/educators/${id}/assessments`),
+  getBatchesAndModules: (id) => apiCall(`/api/educators/${id}/batches-modules`),
+  getFilteredStudents: (id, filters = {}) => {
+    const params = new URLSearchParams(filters);
+    return apiCall(`/api/educators/${id}/students-filtered?${params}`);
+  },
 };
 
 export const goalsAPI = {
