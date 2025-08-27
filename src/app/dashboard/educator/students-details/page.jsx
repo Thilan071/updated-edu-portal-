@@ -1,7 +1,8 @@
 'use client';
 import React, { useMemo, useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { Users, Search, RefreshCw, ChevronDown, BookOpen, GraduationCap } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Users, Search, RefreshCw, ChevronDown, BookOpen, GraduationCap, Eye } from 'lucide-react';
 import apiClient from '@/lib/apiClient';
 
 const STATUS_COLORS = {
@@ -10,7 +11,7 @@ const STATUS_COLORS = {
   Inactive: 'bg-red-500/20 text-red-300',
 };
 
-function StudentCard({ student, isMounted, delay, selectedModule }) {
+function StudentCard({ student, isMounted, delay, selectedModule, onViewDetails }) {
   const fullName = `${student.firstName || ''} ${student.lastName || ''}`.trim();
   const completionRate = student.totalModules > 0 ? Math.round((student.completedModules / student.totalModules) * 100) : 0;
   
@@ -32,11 +33,19 @@ function StudentCard({ student, isMounted, delay, selectedModule }) {
   
   return (
     <div
-      className={`glass-effect-dark rounded-2xl p-6 transition-all duration-300 hover:scale-[1.02]
-        ${isMounted ? 'card-animated' : 'opacity-0 scale-95'}`}
+      className={`glass-effect-dark rounded-2xl p-6 transition-all duration-300 hover:scale-[1.02] cursor-pointer
+        ${isMounted ? 'card-animated' : 'opacity-0 scale-95'} relative group`}
       style={{ animationDelay: `${delay}s` }}
+      onClick={() => onViewDetails(student.id)}
     >
-      <h3 className="text-2xl font-bold text-white mb-2">{fullName}</h3>
+      {/* View Details Button */}
+      <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="bg-blue-500/20 p-2 rounded-lg border border-blue-500/30">
+          <Eye className="w-4 h-4 text-blue-400" />
+        </div>
+      </div>
+      
+      <h3 className="text-2xl font-bold text-white mb-2 pr-12">{fullName}</h3>
       <p className="text-gray-300 text-sm"><strong className="text-gray-400">ID:</strong> {student.studentId || student.id}</p>
       <p className="text-gray-300 text-sm"><strong className="text-gray-400">Email:</strong> {student.email}</p>
       <p className="text-gray-300 text-sm"><strong className="text-gray-400">Batch:</strong> {student.currentBatchName || 'N/A'}</p>
@@ -86,9 +95,14 @@ function StudentCard({ student, isMounted, delay, selectedModule }) {
         </div>
       </div>
       
-      <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${STATUS_COLORS[studentStatus] || STATUS_COLORS['Active']}`}>
-        {studentStatus}
-      </span>
+      <div className="flex justify-between items-center">
+        <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${STATUS_COLORS[studentStatus] || STATUS_COLORS['Active']}`}>
+          {studentStatus}
+        </span>
+        <span className="text-xs text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
+          Click to view details
+        </span>
+      </div>
     </div>
   );
 }
@@ -122,6 +136,7 @@ function useStudentFilter(list) {
 
 export default function StudentsDetails() {
   const { data: session } = useSession();
+  const router = useRouter();
   const [batches, setBatches] = useState([]);
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -197,6 +212,10 @@ export default function StudentsDetails() {
 
   const handleModuleChange = (module) => {
     setSelectedModule(module);
+  };
+
+  const handleViewStudentDetails = (studentId) => {
+    router.push(`/dashboard/educator/students-details/${studentId}`);
   };
 
   const currentModules = selectedBatch ? selectedBatch.modules || [] : [];
@@ -386,7 +405,14 @@ export default function StudentsDetails() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filtered.map((student, idx) => (
-              <StudentCard key={student.id} student={student} isMounted={isMounted} delay={0.4 + idx * 0.1} selectedModule={selectedModule} />
+              <StudentCard 
+                key={student.id} 
+                student={student} 
+                isMounted={isMounted} 
+                delay={0.4 + idx * 0.1} 
+                selectedModule={selectedModule}
+                onViewDetails={handleViewStudentDetails}
+              />
             ))}
             {filtered.length === 0 && (
               <div className="col-span-full text-center text-sm text-gray-400 p-8 glass-effect-dark rounded-2xl">
