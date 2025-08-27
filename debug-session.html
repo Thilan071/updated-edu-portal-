@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Session</title>
+</head>
+<body>
+    <h1>Debug Session Test</h1>
+    <p>Open browser console and navigate to: <a href="http://localhost:3000/dashboard/student/repeat" target="_blank">Repeat Preparation Page</a></p>
+    <p>Then click on any module card and check the console for debug messages.</p>
+    
+    <h2>Expected Console Messages:</h2>
+    <ul>
+        <li>"Card clicked for module: [Module Name]"</li>
+        <li>"Session: [Session Object]"</li>
+        <li>"Setting modal state..."</li>
+        <li>"Fetching goals for: [User ID] [Module Name]"</li>
+        <li>"Goals data received: [Goals Object]"</li>
+    </ul>
+    
+    <h2>Common Issues:</h2>
+    <ul>
+        <li>If no console messages appear: Click handler not attached</li>
+        <li>If "No user session found": Authentication issue</li>
+        <li>If API errors: Backend connection issue</li>
+    </ul>
+    
+    <script>
+        console.log('Debug page loaded. Navigate to the repeat preparation page and test clicking on cards.');
+    </script>
+</body>
+</html>

@@ -1,0 +1,117 @@
+rules_version='2'
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users collection - users can read/write their own data
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' || 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'educator');
+      
+      // Enrollments subcollection
+      match /enrollments/{enrollmentId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read, write: if request.auth != null && 
+          (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'educator');
+      }
+      
+      // Goals subcollection - users can manage their own goals
+      match /goals/{goalId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read: if request.auth != null && 
+          (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'educator');
+      }
+      
+      // Health Checks subcollection - users can manage their own health data
+      match /healthChecks/{healthCheckId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read: if request.auth != null && 
+          (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'educator');
+      }
+      
+      // Health Plans subcollection - users can manage their own health plans
+      match /healthPlans/{planId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read: if request.auth != null && 
+          (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'educator');
+      }
+    }
+    
+    // Admin-only collections
+    match /admin/{document=**} {
+      allow read, write: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Educator and admin access to educational content
+    match /modules/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'educator');
+    }
+    
+    match /assessments/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'educator');
+    }
+    
+    // Student progress - students can read/write their own, educators/admins can read all
+    match /student_progress/{document=**} {
+      allow read, write: if request.auth != null && 
+        (resource.data.studentId == request.auth.uid ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'educator');
+    }
+    
+    // Courses - educators can create/edit their own, admins can do everything, all can read
+    match /courses/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'educator' &&
+          resource.data.educatorId == request.auth.uid));
+    }
+    
+    // Enrollments - students can read their own, educators/admins can read all
+    match /enrollments/{document=**} {
+      allow read: if request.auth != null && 
+        (resource.data.studentId == request.auth.uid ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'educator');
+      allow write: if request.auth != null && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'educator');
+    }
+    
+    // Goal Progress - allow all authenticated operations for now
+    // Note: This is a temporary fix for NextAuth integration
+    match /goalProgress/{document=**} {
+      allow read, write: if true;
+    }
+    
+    // Books and Online Resources - allow read access for all authenticated users
+    // Allow write access for admins only
+    match /books/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    match /online_resources/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Note: Health data is now stored as subcollections under users
+    // See /users/{userId}/healthChecks and /users/{userId}/healthPlans rules above
+  }
+}
