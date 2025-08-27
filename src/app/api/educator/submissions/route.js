@@ -17,41 +17,76 @@ export async function GET(request) {
     const assignmentId = searchParams.get('assignmentId');
     const status = searchParams.get('status');
 
-    // Get submissions from main collection
+    // Get submissions from main collection - simplest possible query to avoid index issues
     let query = adminDb.collection('submissions');
     
-    // Filter by educator
-    if (user.role === 'educator') {
-      query = query.where('educatorId', '==', user.uid);
-    } else if (educatorId) {
-      query = query.where('educatorId', '==', educatorId);
-    }
-
-    // Apply additional filters
-    if (moduleId) {
-      query = query.where('moduleId', '==', moduleId);
-    }
-    if (assignmentId) {
-      query = query.where('assignmentId', '==', assignmentId);
-    }
-    if (status) {
-      query = query.where('status', '==', status);
-    }
-
-    const submissionsSnapshot = await query.orderBy('submittedAt', 'desc').get();
+    // For now, get all submissions and filter in JavaScript to avoid index issues
+    const submissionsSnapshot = await query.limit(500).get();
     const submissions = [];
 
+    // Also get project assignments from the submissions collection  
+    let projectAssignmentsQuery = adminDb.collection('submissions')
+      .where('submissionType', '==', 'project_assignment');
+    
+    const projectAssignmentsSnapshot = await projectAssignmentsQuery.limit(500).get();
+
+    // Process regular submissions
     for (const doc of submissionsSnapshot.docs) {
       const submissionData = doc.data();
+      
+      // Skip project assignments that are already handled separately
+      if (submissionData.submissionType === 'project_assignment') {
+        continue;
+      }
+      
+      // Filter by all criteria in JavaScript to avoid index issues
+      if (user.role === 'educator') {
+        if (submissionData.educatorId && submissionData.educatorId !== user.uid) {
+          continue;
+        }
+      } else if (educatorId) {
+        if (submissionData.educatorId && submissionData.educatorId !== educatorId) {
+          continue;
+        }
+      }
+      
+      // Apply other filters in JavaScript
+      if (moduleId && submissionData.moduleId !== moduleId) {
+        continue;
+      }
+      if (assignmentId && submissionData.assignmentId !== assignmentId) {
+        continue;
+      }
+      if (status && submissionData.status !== status) {
+        continue;
+      }
       
       // Get student details
       const studentDoc = await adminDb.collection('users').doc(submissionData.studentId).get();
       const studentData = studentDoc.exists ? studentDoc.data() : null;
 
-      // Get assignment details
-      const assignmentDoc = await adminDb.collection('assignment_templates')
-        .doc(submissionData.assignmentId).get();
-      const assignmentData = assignmentDoc.exists ? assignmentDoc.data() : null;
+      // Get assignment details - check module subcollection first
+      let assignmentData = null;
+      try {
+        const moduleAssignmentDoc = await adminDb.collection('modules')
+          .doc(submissionData.moduleId)
+          .collection('assignment_templates')
+          .doc(submissionData.assignmentId)
+          .get();
+        
+        if (moduleAssignmentDoc.exists) {
+          assignmentData = moduleAssignmentDoc.data();
+        } else {
+          // Fallback to root collection
+          const assignmentDoc = await adminDb.collection('assignment_templates')
+            .doc(submissionData.assignmentId).get();
+          if (assignmentDoc.exists) {
+            assignmentData = assignmentDoc.data();
+          }
+        }
+      } catch (assignmentError) {
+        console.error('Error fetching assignment:', assignmentError);
+      }
 
       // Get module details
       const moduleDoc = await adminDb.collection('modules').doc(submissionData.moduleId).get();
@@ -76,6 +111,7 @@ export async function GET(request) {
       submissions.push({
         id: doc.id,
         ...submissionData,
+        submissionType: submissionData.submissionType || 'regular',
         // Enhanced fields from student subcollection
         assignmentTitle: studentSubmissionData?.assignmentTitle || assignmentData?.title,
         moduleTitle: studentSubmissionData?.moduleTitle || moduleData?.title,
@@ -85,10 +121,10 @@ export async function GET(request) {
         metadata: submissionData.metadata || {},
         student: studentData ? {
           id: submissionData.studentId,
-          firstName: studentData.firstName,
-          lastName: studentData.lastName,
+          firstName: studentData.firstName || studentData.name?.split(' ')[0] || 'Unknown',
+          lastName: studentData.lastName || studentData.name?.split(' ').slice(1).join(' ') || 'Student',
           email: studentData.email,
-          studentId: studentData.studentId
+          studentId: studentData.studentId || studentData.uid
         } : null,
         assignment: assignmentData ? {
           id: submissionData.assignmentId,
@@ -104,16 +140,107 @@ export async function GET(request) {
       });
     }
 
+    // Process project assignments
+    for (const doc of projectAssignmentsSnapshot.docs) {
+      const submissionData = doc.data();
+      
+      // Filter by educator if needed (for project assignments, educator info might be in assignment)
+      if (user.role === 'educator') {
+        // Check if this educator is associated with this submission
+        // We'll be more permissive here since project assignments might not have educatorId set properly
+        // For now, include all project assignments for educators
+      } else if (educatorId) {
+        if (submissionData.educatorId && submissionData.educatorId !== educatorId) {
+          continue;
+        }
+      }
+      
+      // Apply other filters in JavaScript
+      if (moduleId && submissionData.moduleId !== moduleId) {
+        continue;
+      }
+      if (assignmentId && submissionData.assignmentId !== assignmentId) {
+        continue;
+      }
+      if (status && submissionData.status !== status) {
+        continue;
+      }
+      
+      // Get student details
+      const studentDoc = await adminDb.collection('users').doc(submissionData.studentId).get();
+      const studentData = studentDoc.exists ? studentDoc.data() : null;
+
+      // Get assignment details from module subcollection
+      let assignmentData = null;
+      try {
+        const moduleAssignmentDoc = await adminDb.collection('modules')
+          .doc(submissionData.moduleId)
+          .collection('assignment_templates')
+          .doc(submissionData.assignmentId)
+          .get();
+        
+        if (moduleAssignmentDoc.exists) {
+          assignmentData = moduleAssignmentDoc.data();
+        }
+      } catch (assignmentError) {
+        console.error('Error fetching assignment for project assignment:', assignmentError);
+      }
+
+      // Get module details
+      const moduleDoc = await adminDb.collection('modules').doc(submissionData.moduleId).get();
+      const moduleData = moduleDoc.exists ? moduleDoc.data() : null;
+
+      submissions.push({
+        id: doc.id,
+        ...submissionData,
+        submissionType: 'project_assignment',
+        // Use existing fields from project assignment
+        assignmentTitle: submissionData.assignmentTitle || assignmentData?.title,
+        moduleTitle: submissionData.moduleTitle || moduleData?.title,
+        maxPoints: submissionData.maxScore || assignmentData?.maxScore || 100,
+        submissionTime: submissionData.submittedAt,
+        fileLocation: submissionData.fileUrl,
+        metadata: submissionData.metadata || {},
+        student: studentData ? {
+          id: submissionData.studentId,
+          firstName: studentData.firstName || studentData.name?.split(' ')[0] || 'Unknown',
+          lastName: studentData.lastName || studentData.name?.split(' ').slice(1).join(' ') || 'Student',
+          email: studentData.email,
+          studentId: studentData.studentId || studentData.uid
+        } : null,
+        assignment: {
+          id: submissionData.assignmentId,
+          title: submissionData.assignmentTitle || assignmentData?.title || 'Unknown Assignment',
+          description: submissionData.assignmentDescription || assignmentData?.description || '',
+          maxScore: submissionData.maxScore || assignmentData?.maxScore || 100
+        },
+        module: {
+          id: submissionData.moduleId,
+          title: submissionData.moduleTitle || moduleData?.title || moduleData?.name || 'Unknown Module',
+          name: submissionData.moduleTitle || moduleData?.name || moduleData?.title || 'Unknown Module'
+        }
+      });
+    }
+
+    // Sort all submissions by submission time
+    submissions.sort((a, b) => {
+      const dateA = new Date(a.submittedAt?.seconds ? a.submittedAt.seconds * 1000 : a.submittedAt);
+      const dateB = new Date(b.submittedAt?.seconds ? b.submittedAt.seconds * 1000 : b.submittedAt);
+      return dateB - dateA;
+    });
+
     // Calculate statistics
     const stats = {
       total: submissions.length,
       pending: submissions.filter(s => s.status === 'submitted').length,
-      aiGraded: submissions.filter(s => s.status === 'ai_graded').length,
-      graded: submissions.filter(s => s.status === 'graded').length,
-      needsReview: submissions.filter(s => s.status === 'ai_graded' && (!s.aiConfidence || s.aiConfidence < 0.7)).length,
+      aiGraded: submissions.filter(s => s.status === 'ai_graded' || s.aiGrade !== null).length,
+      graded: submissions.filter(s => s.status === 'graded' || s.finalGrade !== null).length,
+      needsReview: submissions.filter(s => (s.status === 'ai_graded' || s.aiGrade !== null) && (!s.aiConfidence || s.aiConfidence < 0.7)).length,
       aiProcessing: submissions.filter(s => s.aiProgress === 'processing').length,
-      aiCompleted: submissions.filter(s => s.aiProgress === 'completed').length,
-      aiFailed: submissions.filter(s => s.aiProgress === 'failed').length
+      aiCompleted: submissions.filter(s => s.aiProgress === 'completed' || s.aiGrade !== null).length,
+      aiFailed: submissions.filter(s => s.aiProgress === 'failed').length,
+      projectAssignments: submissions.filter(s => s.submissionType === 'project_assignment').length,
+      regularSubmissions: submissions.filter(s => s.submissionType !== 'project_assignment').length
     };
 
     return NextResponse.json({ 
