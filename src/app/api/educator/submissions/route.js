@@ -92,6 +92,46 @@ export async function GET(request) {
       const moduleDoc = await adminDb.collection('modules').doc(submissionData.moduleId).get();
       const moduleData = moduleDoc.exists ? moduleDoc.data() : null;
 
+      // Get reference solution data for this assignment
+      let referenceSolution = null;
+      try {
+        // Simplified query to avoid index requirement - get all references for this assignment
+        const referencesSnapshot = await adminDb.collection('assignment_references')
+          .where('assignmentId', '==', submissionData.assignmentId)
+          .get();
+        
+        if (!referencesSnapshot.empty) {
+          // Sort in JavaScript to get the most recent
+          const references = referencesSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            createdAt: doc.data().createdAt?.toDate?.() || doc.data().createdAt
+          }));
+          
+          // Sort by creation date descending
+          references.sort((a, b) => {
+            const dateA = new Date(a.createdAt);
+            const dateB = new Date(b.createdAt);
+            return dateB - dateA;
+          });
+          
+          const referenceData = references[0];
+          referenceSolution = {
+            id: referenceData.id,
+            fileName: referenceData.fileName,
+            contentType: referenceData.contentAnalysis?.contentType || 'unknown',
+            complexity: referenceData.contentAnalysis?.complexity || 'medium',
+            suggestedScore: referenceData.maxScore || 100,
+            hasTextExtraction: referenceData.textExtractionSuccessful || false,
+            processingCompleted: referenceData.processingCompleted || false,
+            createdAt: referenceData.createdAt,
+            keyTopics: referenceData.contentAnalysis?.keyTopics || []
+          };
+        }
+      } catch (referenceError) {
+        console.error('Error fetching reference solution:', referenceError);
+      }
+
       // Get student's submission from subcollection for additional metadata
       let studentSubmissionData = null;
       try {
@@ -136,7 +176,8 @@ export async function GET(request) {
           id: submissionData.moduleId,
           title: moduleData.title,
           name: moduleData.name
-        } : null
+        } : null,
+        referenceSolution: referenceSolution
       });
     }
 
@@ -190,6 +231,46 @@ export async function GET(request) {
       const moduleDoc = await adminDb.collection('modules').doc(submissionData.moduleId).get();
       const moduleData = moduleDoc.exists ? moduleDoc.data() : null;
 
+      // Get reference solution data for this assignment
+      let referenceSolution = null;
+      try {
+        // Simplified query to avoid index requirement - get all references for this assignment
+        const referencesSnapshot = await adminDb.collection('assignment_references')
+          .where('assignmentId', '==', submissionData.assignmentId)
+          .get();
+        
+        if (!referencesSnapshot.empty) {
+          // Sort in JavaScript to get the most recent
+          const references = referencesSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            createdAt: doc.data().createdAt?.toDate?.() || doc.data().createdAt
+          }));
+          
+          // Sort by creation date descending
+          references.sort((a, b) => {
+            const dateA = new Date(a.createdAt);
+            const dateB = new Date(b.createdAt);
+            return dateB - dateA;
+          });
+          
+          const referenceData = references[0];
+          referenceSolution = {
+            id: referenceData.id,
+            fileName: referenceData.fileName,
+            contentType: referenceData.contentAnalysis?.contentType || 'unknown',
+            complexity: referenceData.contentAnalysis?.complexity || 'medium',
+            suggestedScore: referenceData.maxScore || 100,
+            hasTextExtraction: referenceData.textExtractionSuccessful || false,
+            processingCompleted: referenceData.processingCompleted || false,
+            createdAt: referenceData.createdAt,
+            keyTopics: referenceData.contentAnalysis?.keyTopics || []
+          };
+        }
+      } catch (referenceError) {
+        console.error('Error fetching reference solution for project assignment:', referenceError);
+      }
+
       submissions.push({
         id: doc.id,
         ...submissionData,
@@ -218,7 +299,8 @@ export async function GET(request) {
           id: submissionData.moduleId,
           title: submissionData.moduleTitle || moduleData?.title || moduleData?.name || 'Unknown Module',
           name: submissionData.moduleTitle || moduleData?.name || moduleData?.title || 'Unknown Module'
-        }
+        },
+        referenceSolution: referenceSolution
       });
     }
 

@@ -23,6 +23,14 @@ export default function AIMarkingToolPage() {
   const [selectedSubmissions, setSelectedSubmissions] = useState([]);
   const [batchGrading, setBatchGrading] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [showReferenceModal, setShowReferenceModal] = useState(false);
+  const [currentAssignment, setCurrentAssignment] = useState(null);
+  const [referenceText, setReferenceText] = useState('');
+  const [gradingCriteria, setGradingCriteria] = useState('');
+  const [uploadingReference, setUploadingReference] = useState(false);
+  const [uploadMethod, setUploadMethod] = useState('text'); // 'text' or 'pdf'
+  const [selectedPDF, setSelectedPDF] = useState(null);
+  const [maxScore, setMaxScore] = useState('');
 
   useEffect(() => {
     setIsMounted(true);
@@ -54,9 +62,40 @@ export default function AIMarkingToolPage() {
   const handleAIGrading = async (submissionId) => {
     try {
       setGrading(true);
-      await apiClient.submissionsAPI.gradeWithAI(submissionId);
-      alert('AI grading completed successfully!');
-      fetchSubmissions(); // Refresh submissions
+      const response = await fetch(`/api/educator/submissions/${submissionId}/ai-grade`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to grade submission');
+      }
+
+      const result = await response.json();
+      
+      // Update the specific submission in the local state immediately
+      setSubmissions(prevSubmissions => 
+        prevSubmissions.map(sub => 
+          sub.id === submissionId 
+            ? { 
+                ...sub, 
+                status: 'ai_graded',
+                aiGrade: result.grading.score,
+                aiProgress: 'completed',
+                aiAnalysis: result.grading.feedback,
+                aiConfidence: result.grading.confidence || 0.8
+              }
+            : sub
+        )
+      );
+      
+      alert(`AI grading completed! Score: ${result.grading.score}/${result.grading.percentage}% (${result.grading.grade})`);
+      
+      // Also refresh from server to ensure consistency
+      setTimeout(() => fetchSubmissions(), 1000);
     } catch (err) {
       console.error('Error grading submission:', err);
       alert('Failed to grade submission: ' + err.message);
@@ -74,12 +113,48 @@ export default function AIMarkingToolPage() {
     try {
       setBatchGrading(true);
       const promises = selectedSubmissions.map(id => 
-        apiClient.submissionsAPI.gradeWithAI(id)
+        fetch(`/api/educator/submissions/${id}/ai-grade`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        })
       );
-      await Promise.all(promises);
-      alert(`Successfully graded ${selectedSubmissions.length} submissions!`);
+      
+      const responses = await Promise.all(promises);
+      const results = await Promise.all(responses.map(r => r.json()));
+      
+      // Update submissions immediately with results
+      const successfulResults = {};
+      results.forEach((result, index) => {
+        if (!result.error && result.grading) {
+          successfulResults[selectedSubmissions[index]] = result.grading;
+        }
+      });
+      
+      setSubmissions(prevSubmissions => 
+        prevSubmissions.map(sub => 
+          successfulResults[sub.id] 
+            ? { 
+                ...sub, 
+                status: 'ai_graded',
+                aiGrade: successfulResults[sub.id].score,
+                aiProgress: 'completed',
+                aiAnalysis: successfulResults[sub.id].feedback,
+                aiConfidence: successfulResults[sub.id].confidence || 0.8
+              }
+            : sub
+        )
+      );
+      
+      const successful = results.filter(r => !r.error).length;
+      const failed = results.filter(r => r.error).length;
+      
+      alert(`Batch grading completed! ${successful} successful, ${failed} failed`);
       setSelectedSubmissions([]);
-      fetchSubmissions();
+      
+      // Refresh from server to ensure consistency
+      setTimeout(() => fetchSubmissions(), 1000);
     } catch (err) {
       console.error('Error batch grading:', err);
       alert('Failed to complete batch grading: ' + err.message);
@@ -88,8 +163,13 @@ export default function AIMarkingToolPage() {
     }
   };
 
-  const getStatusColor = (status) => {
-    switch (status) {
+  const getStatusColor = (submission) => {
+    // If has AI grade, use purple (AI graded color)
+    if (submission.aiGrade !== undefined && submission.aiGrade !== null) {
+      return 'bg-purple-500';
+    }
+    
+    switch (submission.status) {
       case 'submitted': return 'bg-yellow-500';
       case 'ai_graded': return 'bg-purple-500';
       case 'graded': return 'bg-green-500';
@@ -97,8 +177,18 @@ export default function AIMarkingToolPage() {
     }
   };
 
-  const getStatusText = (status) => {
-    switch (status) {
+  const getStatusText = (submission) => {
+    // If AI graded, show the score instead of status
+    if (submission.status === 'ai_graded' && submission.aiGrade !== undefined && submission.aiGrade !== null) {
+      return `AI Score: ${submission.aiGrade}%`;
+    }
+    
+    // If submitted but has AI grade (newly graded), show the score
+    if (submission.status === 'submitted' && submission.aiGrade !== undefined && submission.aiGrade !== null) {
+      return `AI Score: ${submission.aiGrade}%`;
+    }
+    
+    switch (submission.status) {
       case 'submitted': return 'Pending AI Review';
       case 'ai_graded': return 'AI Graded';
       case 'graded': return 'Final Graded';
@@ -150,6 +240,148 @@ export default function AIMarkingToolPage() {
 
   const clearSelection = () => {
     setSelectedSubmissions([]);
+  };
+
+  const handleUploadReference = (assignmentId, moduleId) => {
+    setCurrentAssignment({ assignmentId, moduleId });
+    setReferenceText('');
+    setGradingCriteria('');
+    setShowReferenceModal(true);
+  };
+
+  const submitReferenceUpload = async () => {
+    if (!referenceText.trim() && !gradingCriteria.trim()) {
+      alert('Please provide either reference solution text or grading criteria');
+      return;
+    }
+
+    try {
+      setUploadingReference(true);
+      const response = await fetch(`/api/educator/assignments/${currentAssignment.assignmentId}/reference`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          referenceText: referenceText.trim(),
+          gradingCriteria: gradingCriteria.trim(),
+          moduleId: currentAssignment.moduleId,
+          maxScore: 100
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to upload reference solution');
+      }
+
+      alert('Reference solution uploaded successfully! You can now use AI grading for this assignment.');
+      setShowReferenceModal(false);
+      
+      // Immediately refresh submissions to show the new reference details
+      fetchSubmissions();
+    } catch (err) {
+      console.error('Error uploading reference solution:', err);
+      alert('Failed to upload reference solution: ' + err.message);
+    } finally {
+      setUploadingReference(false);
+    }
+  };
+
+  // Handle PDF file selection
+  const handlePDFSelect = (event) => {
+    const file = event.target.files[0];
+    if (file && file.type === 'application/pdf') {
+      setSelectedPDF(file);
+    } else {
+      alert('Please select a valid PDF file');
+      event.target.value = '';
+    }
+  };
+
+  // Submit PDF upload
+  const submitPDFUpload = async () => {
+    if (!selectedPDF) {
+      alert('Please select a PDF file');
+      return;
+    }
+
+    try {
+      setUploadingReference(true);
+      
+      const formData = new FormData();
+      formData.append('file', selectedPDF);
+      formData.append('moduleId', currentAssignment.moduleId || '');
+      formData.append('gradingCriteria', gradingCriteria.trim());
+      formData.append('maxScore', maxScore || '');
+
+      const response = await fetch(`/api/educator/assignments/${currentAssignment.assignmentId}/reference/upload`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to process PDF');
+      }
+
+      const result = await response.json();
+      
+      alert(`PDF processed successfully! 
+        
+📄 File: ${result.reference.fileName}
+🔍 Content Type: ${result.reference.preview?.contentType}
+📊 Complexity: ${result.reference.preview?.complexity}
+🎯 Suggested Score: ${result.reference.maxScore}
+${result.submissionsUpdated > 0 ? `\n✅ Updated AI progress for ${result.submissionsUpdated} submissions` : ''}
+        
+You can now use AI grading for this assignment.`);
+
+      setShowReferenceModal(false);
+      setSelectedPDF(null);
+      setGradingCriteria('');
+      setMaxScore('');
+      
+      // Immediately refresh submissions to show the updated AI progress
+      await fetchSubmissions();
+      
+    } catch (err) {
+      console.error('Error processing PDF:', err);
+      alert('Failed to process PDF: ' + err.message);
+    } finally {
+      setUploadingReference(false);
+    }
+  };
+
+  const handleBatchGradeByAssignment = async (assignmentId, moduleId) => {
+    if (!confirm('This will grade all pending submissions for this assignment. Continue?')) {
+      return;
+    }
+
+    try {
+      setBatchGrading(true);
+      const response = await fetch(`/api/educator/assignments/${assignmentId}/batch-grade`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ moduleId })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to perform batch grading');
+      }
+
+      const result = await response.json();
+      alert(`Batch grading completed! ${result.successfullyGraded} submissions graded successfully, ${result.failed} failed.`);
+      fetchSubmissions();
+    } catch (err) {
+      console.error('Error in batch grading:', err);
+      alert('Failed to perform batch grading: ' + err.message);
+    } finally {
+      setBatchGrading(false);
+    }
   };
 
   if (!session) {
@@ -396,8 +628,8 @@ export default function AIMarkingToolPage() {
                             <h3 className="text-lg font-semibold text-white">
                               {submission.assignment?.title || 'Unknown Assignment'}
                             </h3>
-                            <span className={`px-2 py-1 rounded-full text-xs text-white ${getStatusColor(submission.status)}`}>
-                              {getStatusText(submission.status)}
+                            <span className={`px-2 py-1 rounded-full text-xs text-white ${getStatusColor(submission)}`}>
+                              {getStatusText(submission)}
                             </span>
                             {submission.aiConfidence && (
                               <span className={`text-xs font-medium ${getConfidenceColor(submission.aiConfidence)}`}>
@@ -431,6 +663,41 @@ export default function AIMarkingToolPage() {
                               )}
                             </p>
                           </div>
+                          
+                          {/* Reference Solution Details */}
+                          {submission.referenceSolution && (
+                            <div className="mt-3 bg-indigo-900/30 p-3 rounded-lg border border-indigo-700">
+                              <h4 className="text-sm font-semibold text-indigo-300 mb-2 flex items-center gap-2">
+                                📄 Reference Solution Details
+                              </h4>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-indigo-200">
+                                <div>
+                                  <span className="text-indigo-400">File:</span> {submission.referenceSolution.fileName}
+                                </div>
+                                <div>
+                                  <span className="text-indigo-400">Content Type:</span> {submission.referenceSolution.contentType}
+                                </div>
+                                <div>
+                                  <span className="text-indigo-400">Complexity:</span> {submission.referenceSolution.complexity}
+                                </div>
+                                <div>
+                                  <span className="text-indigo-400">Suggested Score:</span> {submission.referenceSolution.suggestedScore}
+                                </div>
+                              </div>
+                              {submission.referenceSolution.keyTopics && submission.referenceSolution.keyTopics.length > 0 && (
+                                <div className="mt-2">
+                                  <span className="text-indigo-400 text-sm">Key Topics:</span>
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    {submission.referenceSolution.keyTopics.slice(0, 3).map((topic, index) => (
+                                      <span key={index} className="px-2 py-1 bg-indigo-800 text-indigo-200 text-xs rounded">
+                                        {topic}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                         
                         {/* Grades */}
@@ -485,14 +752,23 @@ export default function AIMarkingToolPage() {
                         
                         <div className="flex gap-2">
                           {submission.status === 'submitted' && (
-                            <button
-                              onClick={() => handleAIGrading(submission.id)}
-                              disabled={grading}
-                              className="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors flex items-center gap-1 text-sm disabled:opacity-50"
-                            >
-                              <Bot className="w-4 h-4" />
-                              {grading ? 'Grading...' : 'AI Grade'}
-                            </button>
+                            <>
+                              <button
+                                onClick={() => handleAIGrading(submission.id)}
+                                disabled={grading}
+                                className="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors flex items-center gap-1 text-sm disabled:opacity-50"
+                              >
+                                <Bot className="w-4 h-4" />
+                                {grading ? 'Grading...' : 'AI Grade'}
+                              </button>
+                              <button
+                                onClick={() => handleUploadReference(submission.assignmentId || submission.assignment?.id, submission.moduleId || submission.module?.id)}
+                                className="px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors flex items-center gap-1 text-sm"
+                              >
+                                <FileText className="w-4 h-4" />
+                                Add Reference
+                              </button>
+                            </>
                           )}
                           {submission.status === 'ai_graded' && (
                             <Link
@@ -503,6 +779,16 @@ export default function AIMarkingToolPage() {
                               Review & Confirm
                             </Link>
                           )}
+                          {submission.hasReferenceSolution && (
+                            <button
+                              onClick={() => handleBatchGradeByAssignment(submission.assignmentId || submission.assignment?.id, submission.moduleId || submission.module?.id)}
+                              disabled={batchGrading}
+                              className="px-3 py-1 bg-orange-600 text-white rounded hover:bg-orange-700 transition-colors flex items-center gap-1 text-sm disabled:opacity-50"
+                            >
+                              <Bot className="w-4 h-4" />
+                              {batchGrading ? 'Grading All...' : 'Grade All Similar'}
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -512,6 +798,201 @@ export default function AIMarkingToolPage() {
             </div>
           )}
         </div>
+
+        {/* Reference Solution Upload Modal */}
+        {showReferenceModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+              <h3 className="text-xl font-bold text-white mb-4">Upload Reference Solution</h3>
+              
+              <div className="space-y-4">
+                {/* Upload Method Selection */}
+                <div className="flex gap-4 border-b border-gray-700 pb-4">
+                  <button
+                    onClick={() => setUploadMethod('text')}
+                    className={`px-4 py-2 rounded-lg transition-colors ${
+                      uploadMethod === 'text' 
+                        ? 'bg-purple-600 text-white' 
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    📝 Text Input
+                  </button>
+                  <button
+                    onClick={() => setUploadMethod('pdf')}
+                    className={`px-4 py-2 rounded-lg transition-colors ${
+                      uploadMethod === 'pdf' 
+                        ? 'bg-purple-600 text-white' 
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    📄 PDF Upload
+                  </button>
+                </div>
+
+                {uploadMethod === 'text' ? (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Reference Solution Text
+                      </label>
+                      <textarea
+                        value={referenceText}
+                        onChange={(e) => setReferenceText(e.target.value)}
+                        placeholder="Paste the model answer or reference solution here..."
+                        className="w-full h-40 px-3 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-purple-400 focus:outline-none"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Grading Criteria
+                      </label>
+                      <textarea
+                        value={gradingCriteria}
+                        onChange={(e) => setGradingCriteria(e.target.value)}
+                        placeholder="Specify detailed grading criteria, rubric, or what to look for when comparing student work..."
+                        className="w-full h-32 px-3 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-purple-400 focus:outline-none"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Upload PDF Reference Solution
+                      </label>
+                      <div 
+                        className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+                          selectedPDF 
+                            ? 'border-green-500 bg-green-900/20' 
+                            : 'border-gray-600 hover:border-gray-500'
+                        }`}
+                      >
+                        <input
+                          type="file"
+                          accept=".pdf"
+                          onChange={handlePDFSelect}
+                          className="hidden"
+                          id="pdf-upload"
+                        />
+                        <label htmlFor="pdf-upload" className="cursor-pointer">
+                          <div className="flex flex-col items-center gap-2">
+                            {selectedPDF ? (
+                              <>
+                                <div className="flex items-center gap-2 text-green-400">
+                                  <FileText className="w-6 h-6" />
+                                  <span className="font-medium">{selectedPDF.name}</span>
+                                </div>
+                                <p className="text-sm text-gray-400">
+                                  Size: {(selectedPDF.size / 1024 / 1024).toFixed(2)} MB
+                                </p>
+                                <p className="text-sm text-green-400">
+                                  ✓ PDF selected. Click upload to process.
+                                </p>
+                              </>
+                            ) : (
+                              <>
+                                <FileText className="w-12 h-12 text-gray-400" />
+                                <p className="text-gray-300">Click to select a PDF file</p>
+                                <p className="text-sm text-gray-400">
+                                  The AI will extract text and generate grading criteria automatically
+                                </p>
+                              </>
+                            )}
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+
+                    {selectedPDF && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                          Custom Grading Criteria (Optional)
+                        </label>
+                        <textarea
+                          value={gradingCriteria}
+                          onChange={(e) => setGradingCriteria(e.target.value)}
+                          placeholder="Leave blank to auto-generate criteria from PDF content, or specify custom criteria..."
+                          className="w-full h-24 px-3 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-purple-400 focus:outline-none"
+                        />
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Maximum Score (Optional)
+                      </label>
+                      <input
+                        type="number"
+                        value={maxScore}
+                        onChange={(e) => setMaxScore(e.target.value)}
+                        placeholder="Leave blank for auto-suggestion based on content complexity"
+                        className="w-full px-3 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-purple-400 focus:outline-none"
+                        min="1"
+                        max="1000"
+                      />
+                    </div>
+                  </>
+                )}
+                
+                <div className="bg-blue-900 p-4 rounded-lg">
+                  <h4 className="text-blue-300 font-medium mb-2">
+                    {uploadMethod === 'pdf' ? 'PDF AI Processing:' : 'How AI Grading Works:'}
+                  </h4>
+                  <ul className="text-blue-200 text-sm space-y-1">
+                    {uploadMethod === 'pdf' ? (
+                      <>
+                        <li>• AI will extract text content from your PDF automatically</li>
+                        <li>• Smart analysis will identify key sections and content type</li>
+                        <li>• Grading criteria will be auto-generated based on content</li>
+                        <li>• Content complexity will determine suggested maximum score</li>
+                      </>
+                    ) : (
+                      <>
+                        <li>• AI will compare each student's submission against your reference solution</li>
+                        <li>• Grading will be based on correctness, completeness, and methodology</li>
+                        <li>• Students will receive detailed feedback on their work</li>
+                        <li>• You can review and adjust AI grades before finalizing</li>
+                      </>
+                    )}
+                  </ul>
+                </div>
+              </div>
+              
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => setShowReferenceModal(false)}
+                  disabled={uploadingReference}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={uploadMethod === 'pdf' ? submitPDFUpload : submitReferenceUpload}
+                  disabled={uploadingReference || (
+                    uploadMethod === 'text' 
+                      ? (!referenceText.trim() && !gradingCriteria.trim())
+                      : !selectedPDF
+                  )}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {uploadingReference ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      {uploadMethod === 'pdf' ? 'Processing PDF...' : 'Uploading...'}
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="w-4 h-4" />
+                      {uploadMethod === 'pdf' ? 'Process PDF' : 'Upload Reference'}
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
