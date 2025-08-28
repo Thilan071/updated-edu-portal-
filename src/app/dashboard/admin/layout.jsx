@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import FloatingChatbot from '@/components/FloatingChatbot';
 import {
   LayoutDashboard, UserRoundCog, BookOpen, Wrench, TrendingUp,
-  Repeat, Bell, ChartBar, FileSearch, Settings, Menu,
+  Repeat, Bell, ChartBar, Menu,
 } from 'lucide-react';
 
 const GlobalStyles = () => (
@@ -43,8 +43,6 @@ const links = [
   { name: 'Repeated Module Tracking', href: '/dashboard/admin/repeated-module-tracking', icon: <Repeat size={20} /> },
   { name: 'Notification Hub',   href: '/dashboard/admin/notifications',        icon: <Bell size={20} /> },
   { name: 'Analytics & Reports',href: '/dashboard/admin/analytics',            icon: <ChartBar size={20} /> },
-  { name: 'System Logs & Audit',href: '/dashboard/admin/audit-logs',           icon: <FileSearch size={20} /> },
-  { name: 'Settings',           href: '/dashboard/admin/settings',             icon: <Settings size={20} /> },
 ];
 
 export default function AdminLayout({ children }) {
