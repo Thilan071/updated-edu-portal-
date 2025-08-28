@@ -95,14 +95,22 @@ export async function GET(request) {
     if (error) return error;
 
     console.log('🔮 Fetching predictions for student:', user.uid);
+    console.log('🔍 Python backend URL:', PYTHON_BACKEND_URL);
 
     // Get student's enrolled courses and modules
     const enrollments = await ModuleService.getStudentEnrollments(user.uid);
+    console.log('📚 Student enrollments found:', enrollments?.length || 0);
     
     if (!enrollments || enrollments.length === 0) {
+      console.log('❌ No enrollments found - returning empty predictions');
       return NextResponse.json({
         predictions: [],
-        message: 'No enrollments found for student'
+        message: 'No enrollments found for student. Please ensure you are enrolled in courses.',
+        debug: {
+          studentId: user.uid,
+          enrollmentsChecked: true,
+          enrollmentCount: 0
+        }
       }, { status: 200 });
     }
 
@@ -134,6 +142,9 @@ export async function GET(request) {
 
             // Make ML prediction
             try {
+              console.log(`🚀 Making ML prediction for ${module.title} to ${PYTHON_BACKEND_URL}/predict`);
+              console.log(`📊 Sending data:`, performanceData);
+              
               const mlResponse = await fetch(`${PYTHON_BACKEND_URL}/predict`, {
                 method: 'POST',
                 headers: {
@@ -145,10 +156,9 @@ export async function GET(request) {
               let predictionResult;
               if (mlResponse.ok) {
                 predictionResult = await mlResponse.json();
-                console.log(`🤖 ML prediction for ${module.title}:`, predictionResult);
+                console.log(`✅ ML Backend Response for ${module.title}:`, predictionResult);
               } else {
-                // Fallback to rule-based prediction
-                console.log(`⚠️ ML API failed for ${module.title}, using fallback`);
+                console.log(`❌ ML Backend Failed (${mlResponse.status}) for ${module.title}, using fallback`);
                 predictionResult = generateFallbackPrediction(performanceData);
               }
 
@@ -237,6 +247,12 @@ export async function GET(request) {
           ? Math.round((predictions.reduce((sum, p) => sum + p.confidence, 0) / predictions.length) * 100) / 100 
           : 0,
         lastUpdated: new Date().toISOString()
+      },
+      debug: {
+        studentId: user.uid,
+        enrollmentCount: enrollments.length,
+        backendUrl: PYTHON_BACKEND_URL,
+        usingMLBackend: true
       }
     }, { status: 200 });
 

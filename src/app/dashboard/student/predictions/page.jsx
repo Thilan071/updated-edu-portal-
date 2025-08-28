@@ -7,6 +7,7 @@ export default function PredictionsView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [summary, setSummary] = useState(null);
+  const [debugInfo, setDebugInfo] = useState(null);
 
   useEffect(() => {
     setIsMounted(true);
@@ -33,6 +34,12 @@ export default function PredictionsView() {
       if (data.predictions && Array.isArray(data.predictions)) {
         setPredictions(data.predictions);
         setSummary(data.summary);
+        setDebugInfo(data.debug);
+        
+        // Log debug information
+        if (data.debug) {
+          console.log('🔍 Debug Info:', data.debug);
+        }
       } else {
         throw new Error('Invalid predictions data format');
       }
@@ -41,15 +48,9 @@ export default function PredictionsView() {
       console.error('❌ Error fetching predictions:', err);
       setError(err.message);
       
-      // Fallback to dummy data for development
-      const fallbackData = [
-        { moduleName: "Programming Fundamentals", predictedGrade: 78, riskLevel: "low", confidence: 0.85 },
-        { moduleName: "Database Management", predictedGrade: 54, riskLevel: "medium", confidence: 0.72 },
-        { moduleName: "Cybersecurity", predictedGrade: 42, riskLevel: "high", confidence: 0.89 },
-        { moduleName: "Web Technologies", predictedGrade: 82, riskLevel: "low", confidence: 0.76 },
-        { moduleName: "Computer Networks", predictedGrade: 68, riskLevel: "medium", confidence: 0.68 },
-      ];
-      setPredictions(fallbackData);
+      // Show no data instead of fallback when API fails
+      setPredictions([]);
+      setSummary(null);
     } finally {
       setLoading(false);
     }
@@ -162,25 +163,40 @@ export default function PredictionsView() {
             </p>
           </div>
           
-          {summary && (
-            <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-              <h3 className="font-semibold text-blue-800 mb-2">Summary</h3>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-red-600 font-medium">{summary.highRisk}</span> High Risk
-                </div>
-                <div>
-                  <span className="text-amber-600 font-medium">{summary.mediumRisk}</span> Medium Risk
-                </div>
-                <div>
-                  <span className="text-green-600 font-medium">{summary.lowRisk}</span> Low Risk
-                </div>
-                <div>
-                  <span className="text-blue-600 font-medium">{Math.round(summary.avgConfidence * 100)}%</span> Avg Confidence
+          <div className="flex items-center gap-4">
+            {/* Refresh Button */}
+            <button
+              onClick={() => {
+                setLoading(true);
+                setError(null);
+                fetchPredictions();
+              }}
+              disabled={loading}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {loading ? '🔄' : '↻'} Refresh
+            </button>
+            
+            {summary && (
+              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                <h3 className="font-semibold text-blue-800 mb-2">Summary</h3>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-red-600 font-medium">{summary.highRisk}</span> High Risk
+                  </div>
+                  <div>
+                    <span className="text-amber-600 font-medium">{summary.mediumRisk}</span> Medium Risk
+                  </div>
+                  <div>
+                    <span className="text-green-600 font-medium">{summary.lowRisk}</span> Low Risk
+                  </div>
+                  <div>
+                    <span className="text-blue-600 font-medium">{Math.round(summary.avgConfidence * 100)}%</span> Avg Confidence
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Error message */}
@@ -189,10 +205,42 @@ export default function PredictionsView() {
             <div className="flex items-center">
               <div className="text-red-400 mr-3">⚠️</div>
               <div>
-                <h3 className="text-red-800 font-medium">Prediction Error</h3>
+                <h3 className="text-red-800 font-medium">Unable to Load Predictions</h3>
                 <p className="text-red-600 text-sm mt-1">{error}</p>
-                <p className="text-red-600 text-sm">Showing fallback data for demonstration.</p>
+                <p className="text-red-600 text-sm">Please ensure:</p>
+                <ul className="text-red-600 text-sm mt-1 ml-4">
+                  <li>• Python ML backend is running on port 5000</li>
+                  <li>• You are enrolled in modules</li>
+                  <li>• Network connection is available</li>
+                </ul>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Debug Information */}
+        {debugInfo && (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
+            <h3 className="font-semibold text-gray-800 mb-2">🔍 Debug Information</h3>
+            <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
+              <div>Student ID: <code className="bg-gray-100 px-1 rounded">{debugInfo.studentId?.slice(0, 8)}...</code></div>
+              <div>Enrollments: <span className="font-medium">{debugInfo.enrollmentCount}</span></div>
+              <div>Backend URL: <code className="bg-gray-100 px-1 rounded">{debugInfo.backendUrl}</code></div>
+              <div>Using ML: <span className={debugInfo.usingMLBackend ? 'text-green-600' : 'text-red-600'}>
+                {debugInfo.usingMLBackend ? '✅ Yes' : '❌ No'}
+              </span></div>
+            </div>
+          </div>
+        )}
+
+        {/* Backend Status Indicator */}
+        {!error && predictions.length > 0 && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-6">
+            <div className="flex items-center">
+              <div className="text-green-400 mr-2">✅</div>
+              <span className="text-green-800 text-sm font-medium">
+                ML Backend Connected - Showing Real Predictions
+              </span>
             </div>
           </div>
         )}
@@ -202,9 +250,26 @@ export default function PredictionsView() {
 
         {predictions.length === 0 ? (
           <div className="text-center py-12">
-            <div className="text-gray-400 text-6xl mb-4">📚</div>
-            <h3 className="text-xl font-semibold text-gray-600 mb-2">No Modules Found</h3>
-            <p className="text-gray-500">You don't seem to be enrolled in any modules yet.</p>
+            <div className="text-gray-400 text-6xl mb-4">�</div>
+            {error ? (
+              <>
+                <h3 className="text-xl font-semibold text-gray-600 mb-2">ML Predictions Unavailable</h3>
+                <p className="text-gray-500 mb-4">Cannot connect to the ML prediction service.</p>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 max-w-md mx-auto">
+                  <h4 className="font-medium text-blue-800 mb-2">To enable predictions:</h4>
+                  <ol className="text-blue-700 text-sm text-left">
+                    <li>1. Start the Python backend: <code className="bg-blue-100 px-1 rounded">python app.py</code></li>
+                    <li>2. Ensure you're enrolled in modules</li>
+                    <li>3. Refresh this page</li>
+                  </ol>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="text-xl font-semibold text-gray-600 mb-2">No Modules Found</h3>
+                <p className="text-gray-500">You don't seem to be enrolled in any modules yet.</p>
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-6">
