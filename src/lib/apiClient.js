@@ -152,6 +152,7 @@ export const adminAPI = {
   updateUser: (userId, userData) => apiCall(`/api/admin/users/${userId}`, { method: 'PUT', body: JSON.stringify(userData) }),
   deleteUser: (userId) => apiCall(`/api/admin/users/${userId}`, { method: 'DELETE' }),
   getSystemStats: () => apiCall('/api/admin/stats'),
+  getAnalytics: () => apiCall('/api/admin/analytics'),
 };
 
 export const submissionsAPI = {
@@ -166,4 +167,16 @@ export const submissionsAPI = {
   updateStatus: (submissionId, statusData) => apiCall(`/api/submissions/${submissionId}/status`, { method: 'PATCH', body: JSON.stringify(statusData) }),
 };
 
-export default { moduleAPI, assignmentTemplateAPI, courseAPI, batchAPI, assessmentAPI, progressAPI, selfAssessmentAPI, aiAssessmentAPI, goalsAPI, studentAPI, educatorAPI, adminAPI, submissionsAPI };
+export const participationAPI = {
+  getAll: (filters = {}) => {
+    const params = new URLSearchParams(filters);
+    return apiCall(`/api/participation?${params}`);
+  },
+  updateRecord: (participationData) => apiCall('/api/participation', { method: 'POST', body: JSON.stringify(participationData) }),
+  getAnalytics: (filters = {}) => {
+    const params = new URLSearchParams(filters);
+    return apiCall(`/api/participation/analytics?${params}`);
+  },
+};
+
+export default { moduleAPI, assignmentTemplateAPI, courseAPI, batchAPI, assessmentAPI, progressAPI, selfAssessmentAPI, aiAssessmentAPI, goalsAPI, studentAPI, educatorAPI, adminAPI, submissionsAPI, participationAPI };

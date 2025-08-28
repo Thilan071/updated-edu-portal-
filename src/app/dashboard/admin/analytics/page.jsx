@@ -15,93 +15,94 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import { BarChart2, FileText, Download, Printer } from "lucide-react";
+import { BarChart2, FileText, Download, Printer, RefreshCw } from "lucide-react";
+import { adminAPI } from "../../../../lib/apiClient";
+import { useSession } from "next-auth/react";
 
-// ---------- Demo Data (Hardcoded) ----------
-const progressTrend = [
-  { month: "Apr", avg: 62 },
-  { month: "May", avg: 66 },
-  { month: "Jun", avg: 68 },
-  { month: "Jul", avg: 71 },
-  { month: "Aug", avg: 74 },
-];
-
-const assessmentCompletion = [
-  { module: "Programming", completed: 92 },
-  { module: "DBMS", completed: 78 },
-  { module: "Networks", completed: 85 },
-  { module: "Web Tech", completed: 88 },
-  { module: "Cybersec", completed: 73 },
-];
-
-const attendanceLogs = [
-  { module: "Programming", total: 24, attended: 22 },
-  { module: "DBMS", total: 24, attended: 18 },
-  { module: "Networks", total: 20, attended: 19 },
-  { module: "Web Tech", total: 22, attended: 20 },
-  { module: "Cybersec", total: 18, attended: 14 },
-];
-
-const repeatAnalysis = [
-  { module: "Programming", repeats: 5 },
-  { module: "DBMS", repeats: 12 },
-  { module: "Networks", repeats: 7 },
-  { module: "Web Tech", repeats: 4 },
-  { module: "Cybersec", repeats: 9 },
-];
-
-const riskDistribution = [
-  { name: "Low", value: 140 },
-  { name: "Medium", value: 68 },
-  { name: "High", value: 32 },
-];
-const PIE_COLORS = ["#10b981", "#fbbf24", "#ef4444"]; // Adjusted colors for dark theme
-
-// Example student progress snapshot for CSV
-const studentProgressSnapshot = [
-  { id: "S001", name: "Nethmi Perera", avg: 78, risk: "Low" },
-  { id: "S002", name: "Tharindu Silva", avg: 59, risk: "Medium" },
-  { id: "S003", name: "Isuri Jayasundara", avg: 46, risk: "High" },
-  { id: "S004", name: "Anupa Rajapaksha", avg: 72, risk: "Low" },
-];
-
-// ---------- Helpers ----------
-const toCSV = (rows, headers) => {
-  const head = headers.join(",");
-  const body = rows
-    .map((r) =>
-      headers
-        .map((h) => {
-          const v = r[h] ?? "";
-          const s = String(v).replace(/"/g, '""');
-          return s.includes(",") ? `"${s}"` : s;
-        })
-        .join(",")
-    )
-    .join("\n");
-  return `${head}\n${body}`;
-};
-
-const downloadCSV = (filename, rows, headers) => {
-  const csv = toCSV(rows, headers);
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-};
+// Color scheme for charts
+const PIE_COLORS = ["#10b981", "#fbbf24", "#ef4444"]; // Green, Yellow, Red
 
 export default function AnalyticsReportsPage() {
+  const { data: session, status } = useSession();
   const printRef = useRef(null);
   const [isMounted, setIsMounted] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  // Real data state
+  const [progressTrend, setProgressTrend] = useState([]);
+  const [assessmentCompletion, setAssessmentCompletion] = useState([]);
+  const [attendanceLogs, setAttendanceLogs] = useState([]);
+  const [repeatAnalysis, setRepeatAnalysis] = useState([]);
+  const [riskDistribution, setRiskDistribution] = useState([]);
+  const [studentProgressSnapshot, setStudentProgressSnapshot] = useState([]);
 
   useEffect(() => {
     setIsMounted(true);
-  }, []);
+    if (status === 'authenticated' && session?.user) {
+      fetchAnalyticsData();
+    }
+  }, [status, session]);
 
-  // Build the four CSVs from the demo data
+  const fetchAnalyticsData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      console.log('📊 Fetching analytics data from Firebase...');
+      const response = await adminAPI.getAnalytics();
+      
+      if (response.success) {
+        const { analytics } = response;
+        
+        setProgressTrend(analytics.progressTrend || []);
+        setAssessmentCompletion(analytics.assessmentCompletion || []);
+        setAttendanceLogs(analytics.attendanceLogs || []);
+        setRepeatAnalysis(analytics.repeatAnalysis || []);
+        setRiskDistribution(analytics.riskDistribution || []);
+        setStudentProgressSnapshot(analytics.studentProgressSnapshot || []);
+        
+        console.log('✅ Analytics data loaded successfully');
+      } else {
+        throw new Error('Failed to fetch analytics data');
+      }
+    } catch (err) {
+      console.error('❌ Error fetching analytics data:', err);
+      setError(err.message || 'Failed to load analytics data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ---------- Helpers ----------
+  const toCSV = (rows, headers) => {
+    const head = headers.join(",");
+    const body = rows
+      .map((r) =>
+        headers
+          .map((h) => {
+            const v = r[h] ?? "";
+            const s = String(v).replace(/"/g, '""');
+            return s.includes(",") ? `"${s}"` : s;
+          })
+          .join(",")
+      )
+      .join("\n");
+    return `${head}\n${body}`;
+  };
+
+  const downloadCSV = (filename, rows, headers) => {
+    const csv = toCSV(rows, headers);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Build the four CSVs from the real data
   const onDownloadStudentProgressCSV = () => {
     downloadCSV("Student_Progress_Report.csv", studentProgressSnapshot, [
       "id",
@@ -182,6 +183,36 @@ export default function AnalyticsReportsPage() {
     win.document.close();
   };
 
+  // Loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen p-6 text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto mb-4"></div>
+          <p className="text-lg text-gray-300">Loading analytics data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="min-h-screen p-6 text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-400 text-xl mb-4">❌ Error Loading Analytics</div>
+          <p className="text-gray-300 mb-4">{error}</p>
+          <button 
+            onClick={fetchAnalyticsData}
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <style jsx>{`
@@ -216,6 +247,13 @@ export default function AnalyticsReportsPage() {
             Analytics & Reports
           </h1>
           <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={fetchAnalyticsData}
+              className="glass-effect-dark px-3 py-2 rounded-lg shadow-md hover:bg-white/10 transition-colors flex items-center gap-2 text-sm"
+              disabled={loading}
+            >
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Refresh
+            </button>
             <button
               onClick={onDownloadStudentProgressCSV}
               className="glass-effect-dark px-3 py-2 rounded-lg shadow-md hover:bg-white/10 transition-colors flex items-center gap-2 text-sm"
@@ -264,24 +302,33 @@ export default function AnalyticsReportsPage() {
             </h3>
             <p className="text-gray-400 text-sm mb-4">Overall progress trend</p>
             <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={progressTrend}>
-                  <CartesianGrid stroke="#4b5563" strokeDasharray="3 3" />
-                  <XAxis dataKey="month" stroke="#9ca3af" />
-                  <YAxis domain={[40, 100]} stroke="#9ca3af" />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: 'rgba(31, 41, 55, 0.8)', border: 'none', borderRadius: '8px' }}
-                    labelStyle={{ color: '#d1d5db' }}
-                    itemStyle={{ color: '#e5e7eb' }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="avg"
-                    stroke="#8b5cf6"
-                    strokeWidth={3}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              {progressTrend.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={progressTrend}>
+                    <CartesianGrid stroke="#4b5563" strokeDasharray="3 3" />
+                    <XAxis dataKey="month" stroke="#9ca3af" />
+                    <YAxis domain={[0, 100]} stroke="#9ca3af" />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: 'rgba(31, 41, 55, 0.8)', border: 'none', borderRadius: '8px' }}
+                      labelStyle={{ color: '#d1d5db' }}
+                      itemStyle={{ color: '#e5e7eb' }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="avg"
+                      stroke="#8b5cf6"
+                      strokeWidth={3}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-gray-400">
+                  <div className="text-center">
+                    <p className="text-lg mb-2">📊</p>
+                    <p>No progress data available</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -295,34 +342,43 @@ export default function AnalyticsReportsPage() {
             </h3>
             <p className="text-gray-400 text-sm mb-4">Low / Medium / High</p>
             <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Tooltip
-                    contentStyle={{ backgroundColor: 'rgba(31, 41, 55, 0.8)', border: 'none', borderRadius: '8px' }}
-                    labelStyle={{ color: '#d1d5db' }}
-                    itemStyle={{ color: '#e5e7eb' }}
-                  />
-                  <Legend
-                    verticalAlign="bottom"
-                    height={36}
-                    iconType="circle"
-                    formatter={(value, entry) => (
-                      <span className="text-gray-400">{value}</span>
-                    )}
-                  />
-                  <Pie
-                    data={riskDistribution}
-                    dataKey="value"
-                    nameKey="name"
-                    outerRadius={90}
-                    label
-                  >
-                    {riskDistribution.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
+              {riskDistribution.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Tooltip
+                      contentStyle={{ backgroundColor: 'rgba(31, 41, 55, 0.8)', border: 'none', borderRadius: '8px' }}
+                      labelStyle={{ color: '#d1d5db' }}
+                      itemStyle={{ color: '#e5e7eb' }}
+                    />
+                    <Legend
+                      verticalAlign="bottom"
+                      height={36}
+                      iconType="circle"
+                      formatter={(value, entry) => (
+                        <span className="text-gray-400">{value}</span>
+                      )}
+                    />
+                    <Pie
+                      data={riskDistribution}
+                      dataKey="value"
+                      nameKey="name"
+                      outerRadius={90}
+                      label
+                    >
+                      {riskDistribution.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-gray-400">
+                  <div className="text-center">
+                    <p className="text-lg mb-2">🎯</p>
+                    <p>No risk data available</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -336,19 +392,28 @@ export default function AnalyticsReportsPage() {
             </h3>
             <p className="text-gray-400 text-sm mb-4">% completed</p>
             <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={assessmentCompletion}>
-                  <CartesianGrid stroke="#4b5563" strokeDasharray="3 3" />
-                  <XAxis dataKey="module" stroke="#9ca3af" />
-                  <YAxis domain={[0, 100]} stroke="#9ca3af" />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: 'rgba(31, 41, 55, 0.8)', border: 'none', borderRadius: '8px' }}
-                    labelStyle={{ color: '#d1d5db' }}
-                    itemStyle={{ color: '#e5e7eb' }}
-                  />
-                  <Bar dataKey="completed" fill="#1e90ff" />
-                </BarChart>
-              </ResponsiveContainer>
+              {assessmentCompletion.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={assessmentCompletion}>
+                    <CartesianGrid stroke="#4b5563" strokeDasharray="3 3" />
+                    <XAxis dataKey="module" stroke="#9ca3af" />
+                    <YAxis domain={[0, 100]} stroke="#9ca3af" />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: 'rgba(31, 41, 55, 0.8)', border: 'none', borderRadius: '8px' }}
+                      labelStyle={{ color: '#d1d5db' }}
+                      itemStyle={{ color: '#e5e7eb' }}
+                    />
+                    <Bar dataKey="completed" fill="#1e90ff" />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-gray-400">
+                  <div className="text-center">
+                    <p className="text-lg mb-2">📊</p>
+                    <p>No assessment data available</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -364,31 +429,40 @@ export default function AnalyticsReportsPage() {
               Summary table — sessions vs attended
             </p>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm rounded-lg overflow-hidden">
-                <thead>
-                  <tr className="bg-white/10 text-gray-300">
-                    <th className="text-left p-4">Module</th>
-                    <th className="text-left p-4">Total</th>
-                    <th className="text-left p-4">Attended</th>
-                    <th className="text-left p-4">%</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {attendanceLogs.map((r) => {
-                    const pct = Math.round((r.attended / r.total) * 100);
-                    return (
-                      <tr key={r.module} className="border-b border-white/10">
-                        <td className="p-4">{r.module}</td>
-                        <td className="p-4">{r.total}</td>
-                        <td className="p-4">{r.attended}</td>
-                        <td className={`p-4 font-medium ${pct < 60 ? "text-red-400" : "text-green-400"}`}>
-                          {pct}%
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              {attendanceLogs.length > 0 ? (
+                <table className="w-full text-sm rounded-lg overflow-hidden">
+                  <thead>
+                    <tr className="bg-white/10 text-gray-300">
+                      <th className="text-left p-4">Module</th>
+                      <th className="text-left p-4">Total</th>
+                      <th className="text-left p-4">Attended</th>
+                      <th className="text-left p-4">%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {attendanceLogs.map((r) => {
+                      const pct = Math.round((r.attended / r.total) * 100);
+                      return (
+                        <tr key={r.module} className="border-b border-white/10">
+                          <td className="p-4">{r.module}</td>
+                          <td className="p-4">{r.total}</td>
+                          <td className="p-4">{r.attended}</td>
+                          <td className={`p-4 font-medium ${pct < 60 ? "text-red-400" : "text-green-400"}`}>
+                            {pct}%
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="flex items-center justify-center h-32 text-gray-400">
+                  <div className="text-center">
+                    <p className="text-lg mb-2">📅</p>
+                    <p>No attendance data available</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -402,22 +476,31 @@ export default function AnalyticsReportsPage() {
             </h3>
             <p className="text-gray-400 text-sm mb-4">Summary table — repeat counts</p>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm rounded-lg overflow-hidden">
-                <thead>
-                  <tr className="bg-white/10 text-gray-300">
-                    <th className="text-left p-4">Module</th>
-                    <th className="text-left p-4">Repeats</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {repeatAnalysis.map((r) => (
-                    <tr key={r.module} className="border-b border-white/10">
-                      <td className="p-4">{r.module}</td>
-                      <td className="p-4">{r.repeats}</td>
+              {repeatAnalysis.length > 0 ? (
+                <table className="w-full text-sm rounded-lg overflow-hidden">
+                  <thead>
+                    <tr className="bg-white/10 text-gray-300">
+                      <th className="text-left p-4">Module</th>
+                      <th className="text-left p-4">Repeats</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {repeatAnalysis.map((r) => (
+                      <tr key={r.module} className="border-b border-white/10">
+                        <td className="p-4">{r.module}</td>
+                        <td className="p-4">{r.repeats}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="flex items-center justify-center h-32 text-gray-400">
+                  <div className="text-center">
+                    <p className="text-lg mb-2">🔄</p>
+                    <p>No repeat data available</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
