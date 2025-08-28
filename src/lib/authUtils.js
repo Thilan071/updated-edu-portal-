@@ -43,22 +43,19 @@ export async function authenticateAPIRequest(request, allowedRoles = []) {
   
   if (!user) {
     return {
-      success: false,
-      error: 'Unauthorized',
+      error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
       user: null
     };
   }
   
   if (allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
     return {
-      success: false,
-      error: 'Forbidden - Insufficient permissions',
+      error: NextResponse.json({ error: 'Forbidden - Insufficient permissions' }, { status: 403 }),
       user: null
     };
   }
   
   return {
-    success: true,
     error: null,
     user
   };
