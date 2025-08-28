@@ -21,18 +21,7 @@ export default function MyGrades() {
     try {
       setLoading(true);
       
-      // Fetch student submissions to get grades
-      const submissionsResponse = await fetch(`/api/submissions?studentId=${session.user.uid}`, {
-        credentials: 'include'
-      });
-      
-      if (!submissionsResponse.ok) {
-        throw new Error('Failed to fetch submissions');
-      }
-      
-      const submissionsData = await submissionsResponse.json();
-      
-      // Also fetch student progress for additional grade data
+      // Fetch student progress to get module marks
       const progressResponse = await fetch('/api/student-progress', {
         credentials: 'include'
       });
@@ -42,7 +31,7 @@ export default function MyGrades() {
         progressData = await progressResponse.json();
       }
       
-      // Also fetch enrollments to get module names
+      // Fetch enrollments to get module names and details
       const enrollmentsResponse = await fetch('/api/student/enrollments', {
         credentials: 'include'
       });
@@ -52,45 +41,82 @@ export default function MyGrades() {
         const enrollmentsData = await enrollmentsResponse.json();
         enrollmentsData.enrollments.forEach(course => {
           course.modules.forEach(module => {
-            moduleMap[module.id] = module.title || module.name;
+            moduleMap[module.id] = {
+              name: module.title || module.name,
+              description: module.description,
+              courseTitle: course.title || course.name
+            };
           });
         });
       }
       
-      // Create a map of module grades from submissions
+      // Also fetch student submissions to get assignment-based grades
+      const submissionsResponse = await fetch(`/api/submissions?studentId=${session.user.uid}`, {
+        credentials: 'include'
+      });
+      
+      let submissionsData = { submissions: [] };
+      if (submissionsResponse.ok) {
+        submissionsData = await submissionsResponse.json();
+      }
+      
+      // Create a comprehensive grades list from both sources
       const moduleGrades = {};
-      submissionsData.submissions?.forEach(submission => {
-        if (submission.finalGrade && submission.status === 'graded') {
-          const moduleId = submission.moduleId;
-          if (!moduleGrades[moduleId] || submission.finalGrade > moduleGrades[moduleId].grade) {
+      
+      // Add grades from student_progress (module marks set by educators)
+      progressData.progress?.forEach(progress => {
+        if (progress.marks !== undefined && progress.marks !== null) {
+          const moduleId = progress.moduleId;
+          if (!moduleGrades[moduleId] || progress.marks > moduleGrades[moduleId].grade) {
             moduleGrades[moduleId] = {
-              grade: submission.finalGrade,
-              assignmentTitle: submission.assignment?.title,
-              submittedAt: submission.submittedAt,
-              educatorFeedback: submission.educatorFeedback
+              grade: progress.marks,
+              source: 'module_mark',
+              gradedAt: progress.gradedAt || progress.updatedAt,
+              gradedBy: progress.graderName || 'Educator',
+              status: progress.status
             };
           }
         }
       });
       
-      // Combine with progress data for modules without submissions
-      const allModuleIds = new Set([
-        ...Object.keys(moduleGrades),
-        ...(progressData.progress?.map(p => p.moduleId) || [])
-      ]);
+      // Add grades from submissions (assignment-based grades)
+      submissionsData.submissions?.forEach(submission => {
+        if (submission.finalGrade && submission.status === 'graded') {
+          const moduleId = submission.moduleId;
+          // Only use submission grade if there's no module mark or if submission grade is higher
+          if (!moduleGrades[moduleId] || 
+              (moduleGrades[moduleId].source !== 'module_mark' && submission.finalGrade > moduleGrades[moduleId].grade)) {
+            moduleGrades[moduleId] = {
+              grade: submission.finalGrade,
+              source: 'assignment',
+              assignmentTitle: submission.assignment?.title,
+              submittedAt: submission.submittedAt,
+              educatorFeedback: submission.educatorFeedback,
+              gradedBy: submission.gradedBy || 'Educator'
+            };
+          }
+        }
+      });
       
-      const transformedGrades = Array.from(allModuleIds).map(moduleId => {
-        const submissionGrade = moduleGrades[moduleId];
-        const progressGrade = progressData.progress?.find(p => p.moduleId === moduleId);
+      // Transform to the expected format
+      const transformedGrades = Object.keys(moduleGrades).map(moduleId => {
+        const gradeData = moduleGrades[moduleId];
+        const moduleInfo = moduleMap[moduleId] || {};
         
         return {
           moduleId,
-          moduleName: moduleMap[moduleId] || 'Unknown Module',
-          grade: submissionGrade?.grade || progressGrade?.score || 0,
-          assignmentTitle: submissionGrade?.assignmentTitle,
-          submittedAt: submissionGrade?.submittedAt,
-          educatorFeedback: submissionGrade?.educatorFeedback,
-          hasSubmission: !!submissionGrade
+          moduleName: moduleInfo.name || 'Unknown Module',
+          moduleDescription: moduleInfo.description,
+          courseTitle: moduleInfo.courseTitle,
+          grade: gradeData.grade,
+          source: gradeData.source,
+          assignmentTitle: gradeData.assignmentTitle,
+          submittedAt: gradeData.submittedAt,
+          gradedAt: gradeData.gradedAt,
+          educatorFeedback: gradeData.educatorFeedback,
+          gradedBy: gradeData.gradedBy,
+          status: gradeData.status,
+          hasSubmission: gradeData.source === 'assignment'
         };
       }).filter(grade => grade.grade > 0); // Only show modules with grades
       
@@ -249,23 +275,65 @@ export default function MyGrades() {
                 style={{ animationDelay: `${0.2 + idx * 0.08}s` }}
               >
                 <div className="flex justify-between items-start">
-                  <div>
+                  <div className="flex-1">
                     <h2 className="text-xl font-semibold text-gray-800">{g.moduleName}</h2>
+                    {g.moduleDescription && (
+                      <p className="text-sm text-gray-600 mt-1">{g.moduleDescription}</p>
+                    )}
+                    {g.courseTitle && (
+                      <p className="text-sm text-blue-600 mt-1">Course: {g.courseTitle}</p>
+                    )}
+                    
+                    {/* Grade Source Information */}
+                    <div className="mt-2 flex items-center gap-2">
+                      {g.source === 'module_mark' ? (
+                        <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                          ✓ Module Grade
+                        </span>
+                      ) : (
+                        <span className="inline-block px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
+                          📋 Assignment Grade
+                        </span>
+                      )}
+                      
+                      {g.gradedBy && (
+                        <span className="text-xs text-gray-500">
+                          Graded by: {g.gradedBy}
+                        </span>
+                      )}
+                    </div>
+                    
                     {g.assignmentTitle && (
                       <p className="text-sm text-gray-600 mt-1">Assignment: {g.assignmentTitle}</p>
                     )}
-                    {g.submittedAt && (
-                      <p className="text-xs text-gray-500 mt-1">
-                        Submitted: {new Date(g.submittedAt.seconds ? g.submittedAt.seconds * 1000 : g.submittedAt).toLocaleDateString()}
-                      </p>
-                    )}
+                    
+                    {/* Date Information */}
+                    <div className="mt-2 text-xs text-gray-500">
+                      {g.submittedAt && (
+                        <p>Submitted: {new Date(g.submittedAt.seconds ? g.submittedAt.seconds * 1000 : g.submittedAt).toLocaleDateString()}</p>
+                      )}
+                      {g.gradedAt && (
+                        <p>Graded: {new Date(g.gradedAt.seconds ? g.gradedAt.seconds * 1000 : g.gradedAt).toLocaleDateString()}</p>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-gray-800">{g.grade}%</div>
+                  
+                  <div className="text-right ml-4">
+                    <div className="text-3xl font-bold text-gray-800">{g.grade}%</div>
                     <div className={`text-sm font-semibold ${status.textColor}`}>{status.label}</div>
-                    {g.hasSubmission && (
-                      <div className="text-xs text-green-600 mt-1">✓ Graded</div>
-                    )}
+                    
+                    {/* Status indicators */}
+                    <div className="mt-2 space-y-1">
+                      {g.source === 'module_mark' && (
+                        <div className="text-xs text-blue-600">🎯 Final Module Grade</div>
+                      )}
+                      {g.hasSubmission && (
+                        <div className="text-xs text-green-600">📝 Assignment Based</div>
+                      )}
+                      {g.status === 'completed' && (
+                        <div className="text-xs text-green-600">✅ Completed</div>
+                      )}
+                    </div>
                   </div>
                 </div>
 

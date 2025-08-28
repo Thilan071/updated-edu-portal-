@@ -73,6 +73,9 @@ export default function StudentDash() {
       try {
         const gradesResponse = await apiClient.progressAPI.getStudentProgress(session.user.id);
         grades = gradesResponse.progress || [];
+        
+        // Filter grades to only include those with actual marks
+        grades = grades.filter(g => g.marks !== undefined && g.marks !== null && g.marks > 0);
       } catch (gradesError) {
         console.log('Grades not available yet:', gradesError);
       }
@@ -84,7 +87,7 @@ export default function StudentDash() {
       const enrolledPrograms = enrollments.length;
       const completedAssessments = grades.filter(g => g.status === 'completed').length;
       const averageGrade = grades.length > 0 
-        ? Math.round(grades.reduce((sum, g) => sum + (g.score || 0), 0) / grades.length)
+        ? Math.round(grades.reduce((sum, g) => sum + (g.marks || g.score || 0), 0) / grades.length)
         : 0;
       
       const processedData = {

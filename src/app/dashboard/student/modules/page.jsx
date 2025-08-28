@@ -109,6 +109,25 @@ export default function MyModules() {
       
       const data = await response.json();
       
+      // Also fetch student progress to get marks
+      const progressResponse = await fetch('/api/student-progress', {
+        credentials: 'include'
+      });
+      
+      let progressData = { progress: [] };
+      if (progressResponse.ok) {
+        progressData = await progressResponse.json();
+      }
+      
+      // Create a map of module progress by moduleId
+      const progressMap = {};
+      progressData.progress?.forEach(p => {
+        if (!progressMap[p.moduleId]) {
+          progressMap[p.moduleId] = [];
+        }
+        progressMap[p.moduleId].push(p);
+      });
+      
       // Transform the data to match the expected module structure
       const transformedModules = [];
       
@@ -117,32 +136,54 @@ export default function MyModules() {
           if (course.modules && Array.isArray(course.modules)) {
             course.modules.forEach(module => {
               const completion = module.completion || { percentage: 0, status: 'not_started' };
-              const progress = module.progress || [];
+              const moduleProgressList = progressMap[module.id] || [];
               
-              // Calculate average grade from progress
-              const grades = progress.filter(p => p.score !== undefined).map(p => p.score);
-              const averageGrade = grades.length > 0 
-                ? Math.round(grades.reduce((sum, grade) => sum + grade, 0) / grades.length)
-                : null;
+              // Get the latest/best grade from progress (prioritize marks over score)
+              let moduleGrade = null;
+              let gradeSource = 'none';
               
-              // Determine status based on completion percentage
-              let status = 'In Progress';
-              if (completion.percentage >= 100) {
-                status = 'Completed';
-              } else if (completion.percentage === 0) {
-                status = 'Not Started';
+              if (moduleProgressList.length > 0) {
+                // Find the latest entry with marks (module grade from educator)
+                const moduleMarkEntry = moduleProgressList
+                  .filter(p => p.marks !== undefined && p.marks !== null)
+                  .sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt))[0];
+                
+                if (moduleMarkEntry) {
+                  moduleGrade = moduleMarkEntry.marks;
+                  gradeSource = 'module_mark';
+                } else {
+                  // Fallback to score-based grades
+                  const scoreEntries = moduleProgressList.filter(p => p.score !== undefined);
+                  if (scoreEntries.length > 0) {
+                    moduleGrade = Math.round(scoreEntries.reduce((sum, p) => sum + p.score, 0) / scoreEntries.length);
+                    gradeSource = 'assignment';
+                  }
+                }
+              }
+              
+              // Determine status based on grade and completion
+              let status = 'Not Started';
+              if (moduleGrade !== null) {
+                if (moduleGrade >= 50) {
+                  status = 'Completed';
+                } else {
+                  status = 'In Progress';
+                }
+              } else if (completion.percentage > 0) {
+                status = 'In Progress';
               }
               
               transformedModules.push({
                 id: module.id,
                 moduleName: module.title || module.name || 'Untitled Module',
                 status: status,
-                grade: averageGrade,
-                attempts: progress.length,
+                grade: moduleGrade,
+                gradeSource: gradeSource,
+                attempts: moduleProgressList.length,
                 dueDate: module.dueDate || null,
                 description: module.description || 'No description available',
                 courseTitle: course.title || course.name || 'Untitled Course',
-                completionPercentage: completion.percentage,
+                completionPercentage: moduleGrade !== null ? Math.min(moduleGrade, 100) : completion.percentage,
                 semester: module.semester || 1, // Add semester info
                 programId: course.id
               });
@@ -430,18 +471,62 @@ export default function MyModules() {
           {modules.map((mod, idx) => (
             <div
               key={idx}
-              className={`glass-effect rounded-xl shadow-lg p-6 space-y-2
+              className={`glass-effect rounded-xl shadow-lg p-6 space-y-3
                 transform hover:scale-[1.01] transition-all duration-300
                 ${isMounted ? 'module-card-animated' : 'opacity-0 scale-95'}`}
               style={{ animationDelay: `${0.2 + idx * 0.07}s` }} // Staggered animation
             >
               <h2 className="text-xl font-semibold mb-2 text-gray-800">{mod.moduleName}</h2>
-              <p className="text-sm text-gray-600 mb-3">Course: {mod.courseTitle}</p>
-              <p className="text-gray-700">Status: <strong className={`px-2 py-0.5 rounded-full text-sm ${getStatusClasses(mod.status)}`}>{mod.status}</strong></p>
-              {mod.completionPercentage > 0 && (
+              <p className="text-sm text-gray-600 mb-2">Course: {mod.courseTitle}</p>
+              
+              <div className="flex items-center justify-between">
+                <p className="text-gray-700">Status:</p>
+                <span className={`px-2 py-0.5 rounded-full text-sm font-medium ${getStatusClasses(mod.status)}`}>
+                  {mod.status}
+                </span>
+              </div>
+              
+              {/* Grade Information */}
+              <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-700">Grade:</span>
+                  <div className="text-right">
+                    {mod.grade !== null ? (
+                      <>
+                        <span className="text-lg font-bold text-blue-700">{mod.grade}%</span>
+                        <div className="text-xs text-gray-500">
+                          {mod.gradeSource === 'module_mark' ? '🎯 Final Grade' : 
+                           mod.gradeSource === 'assignment' ? '📝 Assignment' : ''}
+                        </div>
+                      </>
+                    ) : (
+                      <span className="text-gray-500">Not graded</span>
+                    )}
+                  </div>
+                </div>
+                
+                {mod.grade !== null && (
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div 
+                      className={`h-2 rounded-full transition-all duration-300 ${
+                        mod.grade >= 80 ? 'bg-green-500' :
+                        mod.grade >= 65 ? 'bg-blue-500' :
+                        mod.grade >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+                      }`}
+                      style={{ width: `${Math.min(mod.grade, 100)}%` }}
+                    ></div>
+                  </div>
+                )}
+              </div>
+              
+              {/* Progress Information */}
+              {mod.completionPercentage > 0 && mod.grade === null && (
                 <div className="mt-2">
-                  <p className="text-sm text-gray-600">Progress: {mod.completionPercentage}%</p>
-                  <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-sm text-gray-600">Progress:</span>
+                    <span className="text-sm font-medium">{mod.completionPercentage}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
                     <div 
                       className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
                       style={{ width: `${mod.completionPercentage}%` }}
@@ -449,8 +534,13 @@ export default function MyModules() {
                   </div>
                 </div>
               )}
-              <p className="text-gray-700">Grade: <strong>{mod.grade !== null ? <span className="font-bold text-blue-700">{mod.grade}%</span> : <span className="text-gray-500">N/A</span>}</strong></p>
-              <p className="text-gray-700">Attempts: <strong><span className="font-bold text-blue-700">{mod.attempts}</span></strong></p>
+              
+              <div className="flex justify-between text-sm text-gray-600 pt-2 border-t border-gray-200">
+                <span>Submissions: <strong className="text-blue-700">{mod.attempts}</strong></span>
+                {mod.dueDate && (
+                  <span>Due: <strong>{new Date(mod.dueDate).toLocaleDateString()}</strong></span>
+                )}
+              </div>
             </div>
           ))}
         </div>
