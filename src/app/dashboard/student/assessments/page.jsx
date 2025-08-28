@@ -9,6 +9,7 @@ export default function MyAssessments() {
   const [moduleProgress, setModuleProgress] = useState({});
   const [activeAssignments, setActiveAssignments] = useState([]);
   const [completedAssignments, setCompletedAssignments] = useState([]);
+  const [expandedModules, setExpandedModules] = useState({}); // New state for tracking expanded modules
   const [isMounted, setIsMounted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -19,22 +20,223 @@ export default function MyAssessments() {
     if (session?.user?.uid && status !== 'loading') {
       fetchData();
     }
+    
+    // Add event listener to refresh data when returning to the page
+    const handleFocus = () => {
+      if (session?.user?.uid) {
+        refreshData();
+      }
+    };
+    
+    window.addEventListener('focus', handleFocus);
+    
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
   }, [session, status]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      await Promise.all([
-        fetchAssessments(),
-        fetchModules(),
-        fetchStudentProgress(),
-        fetchActiveAssignments()
+      
+      // Step 1: Load basic data
+      const [assessmentsData, modulesData] = await Promise.all([
+        apiClient.assessmentAPI.getAll(),
+        apiClient.moduleAPI.getAll()
       ]);
+      
+      setAssessments(assessmentsData.assessments || []);
+      setModules(modulesData.modules || []);
+      
+      // Step 2: Load assignments and submissions
+      const activeAssignmentsResponse = await apiClient.studentAPI.getActiveAssignments();
+      const allAssignments = activeAssignmentsResponse.assignments || [];
+      
+      if (!session?.user?.uid) {
+        console.error('No user session available');
+        setActiveAssignments(allAssignments);
+        setCompletedAssignments([]);
+        return;
+      }
+      
+      const submissionsResponse = await apiClient.submissionsAPI.getAll({ studentId: session.user.uid });
+      const submissions = submissionsResponse.submissions || [];
+      
+      console.log('📋 Fetched submissions:', submissions);
+      
+      // Create a set of submitted assignment IDs for quick lookup
+      const submittedAssignmentIds = new Set(
+        submissions.map(sub => `${sub.moduleId}-${sub.assignmentId}`)
+      );
+      
+      // Separate active and completed assignments
+      const active = [];
+      const completed = [];
+      
+      allAssignments.forEach(assignment => {
+        const assignmentKey = `${assignment.moduleId}-${assignment.id}`;
+        if (submittedAssignmentIds.has(assignmentKey)) {
+          // Find the submission for this assignment
+          const submission = submissions.find(sub => 
+            sub.moduleId === assignment.moduleId && sub.assignmentId === assignment.id
+          );
+          completed.push({ ...assignment, submission });
+          console.log('📋 Found completed assignment:', assignment.title, 'with grade:', submission?.finalGrade);
+        } else {
+          active.push(assignment);
+        }
+      });
+      
+      setActiveAssignments(active);
+      setCompletedAssignments(completed);
+      
+      // Step 3: Now calculate progress with all data available
+      await calculateStudentProgress(completed);
+      
     } catch (err) {
       console.error('Error fetching data:', err);
       setError('Failed to load assessment data');
     } finally {
       setLoading(false);
+    }
+  };
+  
+  // Separate function to calculate progress with completed assignments
+  const calculateStudentProgress = async (completedAssignmentsData = completedAssignments) => {
+    try {
+      const response = await apiClient.progressAPI.getStudentProgress(session.user.id);
+      const progressByModule = {};
+      
+      console.log('🔍 Calculating progress with completed assignments:', completedAssignmentsData);
+      
+      response.progress?.forEach(progress => {
+        if (!progressByModule[progress.moduleId]) {
+          progressByModule[progress.moduleId] = {
+            assessments: [],
+            totalScore: 0,
+            maxPossibleScore: 0,
+            examScore: 0,
+            practicalScore: 0,
+            assignmentScore: 0,
+            examMaxScore: 0,
+            practicalMaxScore: 0,
+            assignmentMaxScore: 0,
+            isComplete: false,
+            passStatus: 'incomplete'
+          };
+        }
+        
+        progressByModule[progress.moduleId].assessments.push(progress);
+        progressByModule[progress.moduleId].totalScore += progress.score;
+        progressByModule[progress.moduleId].maxPossibleScore += progress.maxScore;
+        
+        // Categorize by assessment type
+        if (progress.assessmentType === 'exam') {
+          progressByModule[progress.moduleId].examScore += progress.score;
+          progressByModule[progress.moduleId].examMaxScore += progress.maxScore;
+        } else if (progress.assessmentType === 'practical') {
+          progressByModule[progress.moduleId].practicalScore += progress.score;
+          progressByModule[progress.moduleId].practicalMaxScore += progress.maxScore;
+        } else if (progress.assessmentType === 'assignment') {
+          progressByModule[progress.moduleId].assignmentScore += progress.score;
+          progressByModule[progress.moduleId].assignmentMaxScore += progress.maxScore;
+        }
+      });
+      
+      // Include completed assignments/submissions in progress calculation
+      completedAssignmentsData.forEach(assignment => {
+        const moduleId = assignment.moduleId;
+        const submission = assignment.submission;
+        
+        console.log('🔍 Processing completed assignment:', assignment.title, 'Grade:', submission?.finalGrade);
+        
+        if (submission?.finalGrade !== undefined) {
+          if (!progressByModule[moduleId]) {
+            progressByModule[moduleId] = {
+              assessments: [],
+              totalScore: 0,
+              maxPossibleScore: 0,
+              examScore: 0,
+              practicalScore: 0,
+              assignmentScore: 0,
+              examMaxScore: 0,
+              practicalMaxScore: 0,
+              assignmentMaxScore: 0,
+              isComplete: false,
+              passStatus: 'incomplete'
+            };
+          }
+          
+          // Add submission as assignment score
+          const maxScore = assignment.maxScore || 100;
+          const actualScore = (submission.finalGrade / 100) * maxScore;
+          
+          console.log('📊 Adding assignment score:', actualScore, 'out of', maxScore);
+          
+          progressByModule[moduleId].assignmentScore += actualScore;
+          progressByModule[moduleId].assignmentMaxScore += maxScore;
+          progressByModule[moduleId].totalScore += actualScore;
+          progressByModule[moduleId].maxPossibleScore += maxScore;
+          
+          // Add to assessments array for tracking
+          progressByModule[moduleId].assessments.push({
+            assessmentId: assignment.id,
+            assessmentType: 'assignment',
+            score: actualScore,
+            maxScore: maxScore,
+            status: 'completed',
+            actualScore: actualScore
+          });
+        }
+      });
+      
+      // Calculate completion status for each module
+      Object.keys(progressByModule).forEach(moduleId => {
+        const moduleData = progressByModule[moduleId];
+        const hasExam = moduleData.examMaxScore > 0;
+        const hasPractical = moduleData.practicalMaxScore > 0;
+        const hasAssignment = moduleData.assignmentMaxScore > 0;
+        
+        // Calculate percentage scores
+        const examPercentage = moduleData.examMaxScore > 0 ? (moduleData.examScore / moduleData.examMaxScore) * 100 : 0;
+        const practicalPercentage = moduleData.practicalMaxScore > 0 ? (moduleData.practicalScore / moduleData.practicalMaxScore) * 100 : 0;
+        const assignmentPercentage = moduleData.assignmentMaxScore > 0 ? (moduleData.assignmentScore / moduleData.assignmentMaxScore) * 100 : 0;
+        const totalPercentage = examPercentage + Math.max(practicalPercentage, assignmentPercentage);
+        
+        console.log('📈 Module', moduleId, 'percentages:', {
+          exam: examPercentage,
+          practical: practicalPercentage,
+          assignment: assignmentPercentage,
+          total: totalPercentage
+        });
+        
+        moduleData.examPercentage = examPercentage;
+        moduleData.practicalPercentage = practicalPercentage;
+        moduleData.assignmentPercentage = assignmentPercentage;
+        moduleData.totalPercentage = totalPercentage;
+        
+        // Module is complete only if BOTH exam AND (practical OR assignment) are completed and total >= 70%
+        const examCompleted = hasExam && examPercentage > 0;
+        const practicalOrAssignmentCompleted = (hasPractical && practicalPercentage > 0) || (hasAssignment && assignmentPercentage > 0);
+        
+        moduleData.isComplete = examCompleted && practicalOrAssignmentCompleted && totalPercentage >= 70;
+        
+        // Pass status: only pass if both assessment types are completed and score >= 70%
+        if (examCompleted && practicalOrAssignmentCompleted && totalPercentage >= 70) {
+          moduleData.passStatus = 'passed';
+        } else if (examCompleted && practicalOrAssignmentCompleted && totalPercentage < 70) {
+          moduleData.passStatus = 'failed';
+        } else if (hasExam || hasPractical || hasAssignment) {
+          moduleData.passStatus = 'incomplete';
+        } else {
+          moduleData.passStatus = 'incomplete';
+        }
+      });
+      
+      console.log('📋 Final progress by module:', progressByModule);
+      setModuleProgress(progressByModule);
+    } catch (err) {
+      console.error('Error calculating student progress:', err);
     }
   };
 
@@ -109,6 +311,9 @@ export default function MyAssessments() {
       const response = await apiClient.progressAPI.getStudentProgress(session.user.id);
       const progressByModule = {};
       
+      // Debug: Log the current completed assignments
+      console.log('🔍 Completed assignments during progress calculation:', completedAssignments);
+      
       response.progress?.forEach(progress => {
         if (!progressByModule[progress.moduleId]) {
           progressByModule[progress.moduleId] = {
@@ -143,6 +348,53 @@ export default function MyAssessments() {
         }
       });
       
+      // Also include completed assignments/submissions in progress calculation
+      completedAssignments.forEach(assignment => {
+        const moduleId = assignment.moduleId;
+        const submission = assignment.submission;
+        
+        console.log('🔍 Processing completed assignment:', assignment.title, 'Grade:', submission?.finalGrade);
+        
+        if (submission?.finalGrade !== undefined) {
+          if (!progressByModule[moduleId]) {
+            progressByModule[moduleId] = {
+              assessments: [],
+              totalScore: 0,
+              maxPossibleScore: 0,
+              examScore: 0,
+              practicalScore: 0,
+              assignmentScore: 0,
+              examMaxScore: 0,
+              practicalMaxScore: 0,
+              assignmentMaxScore: 0,
+              isComplete: false,
+              passStatus: 'incomplete'
+            };
+          }
+          
+          // Add submission as assignment score
+          const maxScore = assignment.maxScore || 100;
+          const actualScore = (submission.finalGrade / 100) * maxScore;
+          
+          console.log('📊 Adding assignment score:', actualScore, 'out of', maxScore);
+          
+          progressByModule[moduleId].assignmentScore += actualScore;
+          progressByModule[moduleId].assignmentMaxScore += maxScore;
+          progressByModule[moduleId].totalScore += actualScore;
+          progressByModule[moduleId].maxPossibleScore += maxScore;
+          
+          // Add to assessments array for tracking
+          progressByModule[moduleId].assessments.push({
+            assessmentId: assignment.id,
+            assessmentType: 'assignment',
+            score: actualScore,
+            maxScore: maxScore,
+            status: 'completed',
+            actualScore: actualScore
+          });
+        }
+      });
+      
       // Calculate completion status for each module
       Object.keys(progressByModule).forEach(moduleId => {
         const moduleData = progressByModule[moduleId];
@@ -158,6 +410,13 @@ export default function MyAssessments() {
         const assignmentPercentage = moduleData.assignmentMaxScore > 0 ? (moduleData.assignmentScore / moduleData.assignmentMaxScore) * 100 : 0;
         const totalPercentage = examPercentage + Math.max(practicalPercentage, assignmentPercentage);
         
+        console.log('📈 Module', moduleId, 'percentages:', {
+          exam: examPercentage,
+          practical: practicalPercentage,
+          assignment: assignmentPercentage,
+          total: totalPercentage
+        });
+        
         moduleData.examPercentage = examPercentage;
         moduleData.practicalPercentage = practicalPercentage;
         moduleData.assignmentPercentage = assignmentPercentage;
@@ -168,13 +427,17 @@ export default function MyAssessments() {
         
         if (totalPercentage >= 70) {
           moduleData.passStatus = 'passed';
-        } else if (hasExam && hasPractical) {
+        } else if (hasExam && (hasPractical || hasAssignment)) {
           moduleData.passStatus = 'failed';
+        } else if (hasExam || hasPractical || hasAssignment) {
+          // If any assessment/assignment is started, show as in progress
+          moduleData.passStatus = 'incomplete';
         } else {
           moduleData.passStatus = 'incomplete';
         }
       });
       
+      console.log('📋 Final progress by module:', progressByModule);
       setModuleProgress(progressByModule);
     } catch (err) {
       console.error('Error fetching student progress:', err);
@@ -196,6 +459,38 @@ export default function MyAssessments() {
     return assessmentProgress;
   };
 
+  // New helper function to refresh data after changes
+  const refreshData = async () => {
+    try {
+      // Refresh all data and recalculate progress
+      await fetchData();
+    } catch (err) {
+      console.error('Error refreshing data:', err);
+    }
+  };
+
+  // New helper function to toggle module expansion
+  const toggleModuleExpansion = (moduleId) => {
+    setExpandedModules(prev => ({
+      ...prev,
+      [moduleId]: !prev[moduleId]
+    }));
+  };
+
+  // New helper function to get assignments for a module
+  const getModuleAssignments = (moduleId) => {
+    const moduleAssessments = assessments.filter(a => a.moduleId === moduleId);
+    const moduleActiveAssignments = activeAssignments.filter(a => a.moduleId === moduleId);
+    const moduleCompletedAssignments = completedAssignments.filter(a => a.moduleId === moduleId);
+    
+    return {
+      assessments: moduleAssessments,
+      activeAssignments: moduleActiveAssignments,
+      completedAssignments: moduleCompletedAssignments,
+      totalAssignments: moduleAssessments.length + moduleActiveAssignments.length + moduleCompletedAssignments.length
+    };
+  };
+
   const getStatusClasses = (status) => {
     if (status === "completed") return "bg-gradient-to-br from-emerald-500 to-green-600";
     if (status === "graded") return "bg-gradient-to-br from-blue-500 to-blue-600";
@@ -213,11 +508,16 @@ export default function MyAssessments() {
   const totalModules = modules.length;
   const completedModules = Object.values(moduleProgress).filter(p => p.isComplete).length;
   const passedModules = Object.values(moduleProgress).filter(p => p.passStatus === 'passed').length;
-  const totalAssessments = assessments.length;
-  const completedAssessments = assessments.filter(assessment => {
+  
+  // Calculate total assessments (traditional assessments + all assignments)
+  const totalAssessments = assessments.length + activeAssignments.length + completedAssignments.length;
+  
+  // Calculate completed assessments (traditional assessments with progress + completed assignments)
+  const completedTraditionalAssessments = assessments.filter(assessment => {
     const progress = getAssessmentProgress(assessment);
     return progress !== null;
   }).length;
+  const completedAssessments = completedTraditionalAssessments + completedAssignments.length;
 
   if (loading) {
     return (
@@ -268,6 +568,16 @@ export default function MyAssessments() {
 
         .assessment-card-animated {
           animation: fadeInSlideUp 0.6s ease-out forwards;
+        }
+
+        /* Fade-in animation for expanded content */
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+
+        .animate-fade-in {
+          animation: fadeIn 0.3s ease-out forwards;
         }
 
         /* Updated: Glass-effect for white background with slight transparency */
@@ -322,6 +632,34 @@ export default function MyAssessments() {
         }
         .progress-bar-animated {
             animation: progressBarFill 1.5s ease-out forwards;
+        }
+
+        /* Enhanced progress bar styles */
+        .module-progress-bar {
+            background: linear-gradient(90deg, #e5e7eb 0%, #f3f4f6 100%);
+            border: 1px solid #d1d5db;
+        }
+        
+        .module-progress-fill {
+            background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 50%, #10b981 100%);
+            box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+            position: relative;
+        }
+        
+        .module-progress-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%);
+            animation: shimmer 2s infinite;
+        }
+        
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
         }
 
         /* Button hover effect */
@@ -431,90 +769,212 @@ export default function MyAssessments() {
           </div>
         </div>
 
-        {/* Module Progress Section */}
+        {/* Module Progress Section - Now Expandable */}
         <div className="mb-8">
-          <h2 className="text-2xl font-bold text-gray-800 mb-4 header-font">Module Progress</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <h2 className="text-2xl font-bold text-gray-800 mb-4 header-font">Module Progress & Assignments</h2>
+          <div className="space-y-6">
             {modules.map((module, idx) => {
               const progress = moduleProgress[module.id];
-              const hasProgress = progress && progress.assessments.length > 0;
+              const moduleAssignments = getModuleAssignments(module.id);
+              const isExpanded = expandedModules[module.id];
               
               return (
-                <div
-                  key={module.id}
-                  className={`glass-effect p-4 rounded-xl shadow-lg transform hover:scale-[1.02] transition-all duration-300
-                    ${isMounted ? 'assessment-card-animated' : 'opacity-0 scale-95'}`}
-                  style={{ animationDelay: `${0.15 + idx * 0.05}s` }}
-                >
-                  <h3 className="font-semibold text-gray-800 mb-2">{module.title}</h3>
-                  
-                  {hasProgress ? (
-                    <>
-                      <div className="space-y-2 mb-3">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">Exam:</span>
-                          <span className="font-medium">{progress.examPercentage.toFixed(1)}%</span>
-                        </div>
-                        <div className="w-full bg-gray-300 rounded-full h-2">
-                          <div
-                            className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all duration-1000"
-                            style={{ width: `${Math.min(progress.examPercentage, 100)}%` }}
-                          ></div>
+                <div key={module.id} className="space-y-4">
+                  {/* Module Card Header - Clickable */}
+                  <div
+                    className={`glass-effect p-6 rounded-xl shadow-lg transform hover:scale-[1.02] transition-all duration-300 cursor-pointer border-l-4 border-blue-500
+                      ${isMounted ? 'assessment-card-animated' : 'opacity-0 scale-95'}`}
+                    style={{ animationDelay: `${0.15 + idx * 0.05}s` }}
+                    onClick={() => toggleModuleExpansion(module.id)}
+                  >
+                    <div className="flex justify-between items-center">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <h3 className="text-xl font-semibold text-gray-800">{module.title}</h3>
+                          <span className="text-gray-500 text-sm">
+                            ({moduleAssignments.totalAssignments} assignment{moduleAssignments.totalAssignments !== 1 ? 's' : ''})
+                          </span>
+                          <div className={`transform transition-transform duration-200 text-gray-500 ${
+                            isExpanded ? 'rotate-180' : 'rotate-0'
+                          }`}>
+                            ▼
+                          </div>
                         </div>
                         
-                        {progress.practicalPercentage > 0 && (
-                          <>
-                            <div className="flex justify-between text-sm">
-                              <span className="text-gray-600">Practical:</span>
-                              <span className="font-medium">{progress.practicalPercentage.toFixed(1)}%</span>
+                        {/* Quick Progress Overview */}
+                        {progress && (
+                          <div className="grid grid-cols-3 gap-4 mb-3">
+                            <div className="text-center">
+                              <p className="text-xs text-gray-500">Exam</p>
+                              <p className="text-sm font-medium text-blue-600">{progress.examPercentage.toFixed(1)}%</p>
                             </div>
-                            <div className="w-full bg-gray-300 rounded-full h-2">
-                              <div
-                                className="bg-gradient-to-r from-green-500 to-green-600 h-2 rounded-full transition-all duration-1000"
-                                style={{ width: `${Math.min(progress.practicalPercentage, 100)}%` }}
-                              ></div>
+                            <div className="text-center">
+                              <p className="text-xs text-gray-500">Practical</p>
+                              <p className="text-sm font-medium text-green-600">{progress.practicalPercentage.toFixed(1)}%</p>
                             </div>
-                          </>
+                            <div className="text-center">
+                              <p className="text-xs text-gray-500">Total</p>
+                              <p className="text-sm font-medium text-purple-600">{progress.totalPercentage.toFixed(1)}%</p>
+                            </div>
+                          </div>
                         )}
                         
-                        {progress.assignmentPercentage > 0 && (
-                          <>
-                            <div className="flex justify-between text-sm">
-                              <span className="text-gray-600">Assignment:</span>
-                              <span className="font-medium">{progress.assignmentPercentage.toFixed(1)}%</span>
-                            </div>
-                            <div className="w-full bg-gray-300 rounded-full h-2">
-                              <div
-                                className="bg-gradient-to-r from-orange-500 to-orange-600 h-2 rounded-full transition-all duration-1000"
-                                style={{ width: `${Math.min(progress.assignmentPercentage, 100)}%` }}
-                              ></div>
-                            </div>
-                          </>
-                        )}
-                        
-                        <div className="flex justify-between text-sm font-semibold">
-                          <span className="text-gray-700">Total:</span>
-                          <span className="text-purple-700">{progress.totalPercentage.toFixed(1)}% / 200%</span>
-                        </div>
-                        <div className="w-full bg-gray-300 rounded-full h-3">
-                          <div
-                            className="bg-gradient-to-r from-purple-500 to-purple-600 h-3 rounded-full transition-all duration-1000"
-                            style={{ width: `${Math.min(progress.totalPercentage / 2, 100)}%` }}
-                          ></div>
+                        {/* Module Progress Bar */}
+                        <div className="mt-3">
+                          {progress ? (
+                            <>
+                              <div className="flex justify-between items-center mb-2">
+                                <span className="text-sm font-medium text-gray-700">Module Progress</span>
+                                <span className="text-sm text-gray-600">{progress.totalPercentage.toFixed(1)}% / 200%</span>
+                              </div>
+                              <div className="w-full module-progress-bar rounded-full h-3 shadow-inner">
+                                <div
+                                  className="module-progress-fill h-3 rounded-full transition-all duration-1000 overflow-hidden"
+                                  style={{ width: `${Math.min(progress.totalPercentage / 2, 100)}%` }}
+                                ></div>
+                              </div>
+                              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                                <span>0%</span>
+                                <span>50%</span>
+                                <span>100%</span>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="flex justify-between items-center mb-2">
+                                <span className="text-sm font-medium text-gray-700">Module Progress</span>
+                                <span className="text-sm text-gray-600">0%</span>
+                              </div>
+                              <div className="w-full module-progress-bar rounded-full h-3 shadow-inner">
+                                <div className="bg-gray-300 h-3 rounded-full" style={{ width: '0%' }}></div>
+                              </div>
+                              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                                <span>0%</span>
+                                <span>50%</span>
+                                <span>100%</span>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
                       
-                      <div className={`px-3 py-1 rounded-full text-white text-sm font-semibold text-center ${getModuleStatusClasses(progress.passStatus)}`}>
-                        {progress.passStatus === 'passed' ? 'PASSED' : 
-                         progress.passStatus === 'failed' ? 'FAILED' : 'IN PROGRESS'}
+                      {/* Status Badge */}
+                      <div className="text-right ml-6">
+                        {progress ? (
+                          <span className={`px-3 py-1 rounded-full text-white text-sm font-semibold ${
+                            getModuleStatusClasses(progress.passStatus)
+                          }`}>
+                            {progress.passStatus === 'passed' ? 'PASSED' : 
+                             progress.passStatus === 'failed' ? 'FAILED' :
+                             progress.passStatus === 'incomplete' ? 'IN PROGRESS' : 'NOT STARTED'}
+                          </span>
+                        ) : (
+                          <span className="px-3 py-1 rounded-full bg-gray-400 text-white text-sm font-semibold">
+                            NOT STARTED
+                          </span>
+                        )}
                       </div>
-                    </>
-                  ) : (
-                    <div className="text-center py-4">
-                      <p className="text-gray-500 text-sm">No assessments completed</p>
-                      <div className="px-3 py-1 rounded-full bg-gray-400 text-white text-sm font-semibold mt-2">
-                        NOT STARTED
-                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Expanded Module Content */}
+                  {isExpanded && (
+                    <div className="ml-6 space-y-6 animate-fade-in">
+                      {/* Traditional Assessments */}
+                      {moduleAssignments.assessments.length > 0 && (
+                        <div>
+                          <h4 className="text-lg font-semibold text-gray-700 mb-3">📊 Traditional Assessments</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {moduleAssignments.assessments.map((assessment) => {
+                              const assessmentProgress = getAssessmentProgress(assessment);
+                              const statusClasses = assessmentProgress ? getStatusClasses(assessmentProgress.status) : 'bg-gray-500';
+                              
+                              return (
+                                <div key={assessment.id} className="glass-effect p-4 rounded-lg border-l-4 border-purple-400">
+                                  <h5 className="font-semibold text-gray-800 mb-2">{assessment.title}</h5>
+                                  <p className="text-sm text-gray-600 mb-2">
+                                    Due: {new Date(assessment.dueDate).toLocaleDateString()}
+                                  </p>
+                                  {assessmentProgress && (
+                                    <div className="mb-2">
+                                      <p className="text-sm font-medium text-blue-600">
+                                        Score: {assessmentProgress.score}%
+                                      </p>
+                                    </div>
+                                  )}
+                                  <button className="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded text-sm">
+                                    View Details
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Active Assignments */}
+                      {moduleAssignments.activeAssignments.length > 0 && (
+                        <div>
+                          <h4 className="text-lg font-semibold text-gray-700 mb-3">📝 Active Assignments</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {moduleAssignments.activeAssignments.map((assignment) => {
+                              const isOverdue = new Date(assignment.dueDate) < new Date();
+                              
+                              return (
+                                <div 
+                                  key={assignment.id}
+                                  onClick={() => window.location.href = `/dashboard/student/assignments/${assignment.moduleId}/${assignment.id}`}
+                                  className={`glass-effect p-4 rounded-lg cursor-pointer border-l-4 hover:scale-105 transition-all ${
+                                    isOverdue ? 'border-red-500' : 'border-orange-500'
+                                  }`}
+                                >
+                                  <h5 className="font-semibold text-gray-800 mb-2">{assignment.title}</h5>
+                                  <p className={`text-sm mb-2 ${
+                                    isOverdue ? 'text-red-600 font-medium' : 'text-gray-600'
+                                  }`}>
+                                    Due: {new Date(assignment.dueDate).toLocaleDateString()}
+                                  </p>
+                                  <button className={`w-full px-4 py-2 rounded text-sm font-medium ${
+                                    isOverdue 
+                                      ? 'bg-red-600 hover:bg-red-700 text-white'
+                                      : 'bg-orange-600 hover:bg-orange-700 text-white'
+                                  }`}>
+                                    {isOverdue ? 'Complete Overdue' : 'Start Assignment'}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Completed Assignments */}
+                      {moduleAssignments.completedAssignments.length > 0 && (
+                        <div>
+                          <h4 className="text-lg font-semibold text-gray-700 mb-3">✅ Completed Assignments</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {moduleAssignments.completedAssignments.map((assignment) => (
+                              <div key={assignment.id} className="glass-effect p-4 rounded-lg border-l-4 border-green-500">
+                                <h5 className="font-semibold text-gray-800 mb-2">{assignment.title}</h5>
+                                <p className="text-sm text-gray-600 mb-1">
+                                  Submitted: {new Date(assignment.submission.submittedAt.seconds * 1000).toLocaleDateString()}
+                                </p>
+                                {assignment.submission.finalGrade && (
+                                  <p className="text-sm font-medium text-green-600 mb-2">
+                                    Grade: {assignment.submission.finalGrade}%
+                                  </p>
+                                )}
+                                <button 
+                                  onClick={() => window.location.href = `/dashboard/student/assignments/${assignment.moduleId}/${assignment.id}`}
+                                  className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm"
+                                >
+                                  View Submission
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -523,310 +983,11 @@ export default function MyAssessments() {
           </div>
         </div>
 
-        {/* Active Assignments Section */}
-        {activeAssignments.length > 0 && (
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold text-gray-800 mb-4 header-font">Active Assignments</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {activeAssignments.map((assignment, idx) => {
-                const progress = getAssessmentProgress(assignment);
-                const isOverdue = new Date(assignment.dueDate) < new Date();
-                const submission = assignment.submission;
-                
-                return (
-                  <div
-                    key={assignment.id}
-                    onClick={() => window.location.href = `/dashboard/student/assignments/${assignment.moduleId}/${assignment.id}`}
-                    className={`glass-effect p-6 rounded-xl shadow-lg transform hover:scale-[1.02] transition-all duration-300 border-l-4 cursor-pointer ${
-                      submission ? 'border-green-500' : isOverdue ? 'border-red-500' : 'border-orange-500'
-                    } ${isMounted ? 'assessment-card-animated' : 'opacity-0 scale-95'}`}
-                    style={{ animationDelay: `${0.15 + idx * 0.05}s` }}
-                  >
-                    <div className="flex justify-between items-start mb-3">
-                      <h3 className="font-semibold text-gray-800">{assignment.title}</h3>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        submission ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'
-                      }`}>
-                        {submission ? 'SUBMITTED' : 'ASSIGNMENT'}
-                      </span>
-                    </div>
-                    
-                    <p className="text-sm text-gray-600 mb-2">{getModuleName(assignment.moduleId)}</p>
-                    
-                    <div className="space-y-2 mb-4">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Due Date:</span>
-                        <span className={`font-medium ${isOverdue ? 'text-red-600' : 'text-gray-800'}`}>
-                          {new Date(assignment.dueDate).toLocaleDateString()}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Max Score:</span>
-                        <span className="font-medium">{assignment.maxScore || 100} points</span>
-                      </div>
-                      {submission && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">Status:</span>
-                          <span className="font-medium text-blue-600">
-                            {submission.status === 'submitted' ? 'Under Review' : 
-                             submission.status === 'graded' ? 'Graded' : 
-                             submission.status === 'ai_graded' ? 'AI Graded' : 'Submitted'}
-                          </span>
-                        </div>
-                      )}
-                      {submission && submission.finalGrade !== undefined && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">Grade:</span>
-                          <span className="font-medium text-purple-600">{submission.finalGrade}%</span>
-                        </div>
-                      )}
-                      {progress && !submission && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">Your Score:</span>
-                          <span className="font-medium text-green-600">{progress.score}%</span>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {submission && submission.finalGrade !== undefined && (
-                      <div className="mb-4">
-                        <div className="w-full bg-gray-300 rounded-full h-2">
-                          <div
-                            className="bg-gradient-to-r from-purple-500 to-purple-600 h-2 rounded-full transition-all duration-1000"
-                            style={{ width: `${Math.min(submission.finalGrade, 100)}%` }}
-                          ></div>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {progress && !submission && (
-                      <div className="mb-4">
-                        <div className="w-full bg-gray-300 rounded-full h-2">
-                          <div
-                            className="bg-gradient-to-r from-orange-500 to-orange-600 h-2 rounded-full transition-all duration-1000"
-                            style={{ width: `${Math.min(progress.score, 100)}%` }}
-                          ></div>
-                        </div>
-                      </div>
-                    )}
-                    
-                    <div className="space-y-2">
-                      <button 
-                        onClick={() => window.location.href = `/dashboard/student/assignments/${assignment.moduleId}/${assignment.id}`}
-                        className={`w-full px-4 py-2 rounded-lg font-semibold transition-all duration-300 transform hover:scale-105 ${
-                          submission 
-                            ? 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white'
-                            : progress 
-                            ? 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white'
-                            : 'bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white'
-                        }`}
-                      >
-                        {submission ? 'View Submission' : progress ? 'View Results' : 'Start Assignment'}
-                      </button>
-                      
-                      {submission && (
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            window.location.href = `/dashboard/student/assignments/${assignment.moduleId}/${assignment.id}/review`;
-                          }}
-                          className="w-full bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 transform hover:scale-105"
-                        >
-                          Review Submission
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
-        {/* Completed Assignments Section */}
-        {completedAssignments.length > 0 && (
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold text-gray-800 mb-4 header-font">Completed Assignments</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {completedAssignments.map((assignment, idx) => {
-                const submission = assignment.submission;
-                
-                return (
-                  <div
-                    key={assignment.id}
-                    className={`glass-effect p-6 rounded-xl shadow-lg border-l-4 border-green-500 ${
-                      isMounted ? 'assessment-card-animated' : 'opacity-0 scale-95'
-                    }`}
-                    style={{ animationDelay: `${0.15 + idx * 0.05}s` }}
-                  >
-                    <div className="flex justify-between items-start mb-3">
-                      <h3 className="font-semibold text-gray-800">{assignment.title}</h3>
-                      <span className="px-2 py-1 rounded-full bg-green-100 text-green-800 text-xs font-medium">
-                        COMPLETED
-                      </span>
-                    </div>
-                    
-                    <p className="text-sm text-gray-600 mb-2">{getModuleName(assignment.moduleId)}</p>
-                    
-                    <div className="space-y-2 mb-4">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Submitted:</span>
-                        <span className="font-medium text-gray-800">
-                          {new Date(submission.submittedAt.seconds * 1000).toLocaleDateString()}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Status:</span>
-                        <span className="font-medium text-green-600">
-                          {submission.status === 'submitted' ? 'Under Review' : 
-                           submission.status === 'graded' ? 'Graded' : 
-                           submission.status === 'ai_graded' ? 'AI Graded' : 'Submitted'}
-                        </span>
-                      </div>
-                      {submission.finalGrade !== undefined && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">Grade:</span>
-                          <span className="font-medium text-blue-600">{submission.finalGrade}%</span>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {submission.finalGrade !== undefined && (
-                      <div className="mb-4">
-                        <div className="w-full bg-gray-300 rounded-full h-2">
-                          <div
-                            className="bg-gradient-to-r from-green-500 to-green-600 h-2 rounded-full transition-all duration-1000"
-                            style={{ width: `${Math.min(submission.finalGrade, 100)}%` }}
-                          ></div>
-                        </div>
-                      </div>
-                    )}
-                    
-                    <button 
-                      onClick={() => window.location.href = `/dashboard/student/assignments/${assignment.moduleId}/${assignment.id}`}
-                      className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 transform hover:scale-105"
-                    >
-                      View Submission
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
-        {/* Assessment List by Module */}
-        <div className="space-y-8">
-          <h2 className="text-2xl font-bold text-gray-800 mb-4 header-font">Traditional Assessments</h2>
-          
-          {modules.map((module, moduleIdx) => {
-            const moduleAssessments = assessments.filter(a => a.moduleId === module.id);
-            if (moduleAssessments.length === 0) return null;
-            
-            const progress = moduleProgress[module.id];
-            
-            return (
-              <div key={module.id} className="space-y-4">
-                <div className={`glass-effect p-4 rounded-xl shadow-lg border-l-4 border-blue-500
-                  transform ${isMounted ? 'assessment-card-animated' : 'opacity-0 scale-95'}`}
-                  style={{ animationDelay: `${0.2 + moduleIdx * 0.1}s` }}
-                >
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-xl font-bold text-gray-800 header-font">{module.title}</h3>
-                    {progress && (
-                      <div className="text-right">
-                        <p className="text-sm text-gray-600">Module Progress</p>
-                        <p className="text-lg font-semibold text-purple-700">
-                          {progress.totalPercentage.toFixed(1)}% / 200%
-                        </p>
-                        <span className={`px-2 py-1 rounded-full text-white text-xs font-semibold ${getModuleStatusClasses(progress.passStatus)}`}>
-                          {progress.passStatus === 'passed' ? 'PASSED' : 
-                           progress.passStatus === 'failed' ? 'FAILED' : 'IN PROGRESS'}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  {module.description && (
-                    <p className="text-gray-600 mt-2">{module.description}</p>
-                  )}
-                </div>
-                
-                <div className="space-y-4 ml-4">
-                  {moduleAssessments.map((assessment, idx) => {
-                    const assessmentProgress = getAssessmentProgress(assessment);
-                    const statusClasses = assessmentProgress ? getStatusClasses(assessmentProgress.status) : 'bg-gray-500';
-                    
-                    return (
-                      <div
-                        key={assessment.id}
-                        className={`glass-effect p-6 rounded-xl shadow-lg transform hover:scale-[1.02] transition-all duration-300
-                          ${isMounted ? 'assessment-card-animated' : 'opacity-0 scale-95'}`}
-                        style={{ animationDelay: `${0.25 + moduleIdx * 0.1 + idx * 0.05}s` }}
-                      >
-                        <div className="flex flex-col md:flex-row md:items-center justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              <h4 className="text-lg font-semibold text-gray-800">{assessment.title}</h4>
-                              {assessmentProgress && (
-                                <span className={`px-3 py-1 rounded-full text-white text-sm font-semibold ${statusClasses}`}>
-                                  {assessmentProgress.status.toUpperCase()}
-                                </span>
-                              )}
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                assessment.type === 'exam' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
-                              }`}>
-                                {assessment.type ? assessment.type.toUpperCase() : 'ASSESSMENT'}
-                              </span>
-                            </div>
-                            
-                            {assessment.description && (
-                              <p className="text-gray-600 mb-2">{assessment.description}</p>
-                            )}
-                            
-                            <p className="text-gray-600 mb-2">
-                              <span className="font-medium">Due:</span> {new Date(assessment.dueDate).toLocaleDateString()}
-                            </p>
-                            
-                            <p className="text-gray-600 mb-4">
-                              <span className="font-medium">Max Score:</span> {assessment.maxScore || 100} points
-                            </p>
-                            
-                            {assessmentProgress && assessmentProgress.score !== null && (
-                              <div className="mb-4">
-                                <div className="flex justify-between items-center mb-2">
-                                  <span className="text-sm font-medium text-gray-700">
-                                    Score: {assessmentProgress.score}% ({assessmentProgress.actualScore || assessmentProgress.score}/{assessment.maxScore || 100} points)
-                                  </span>
-                                  <span className="text-sm text-gray-500">{assessmentProgress.score}% of 100%</span>
-                                </div>
-                                <div className="w-full bg-gray-300 rounded-full h-3">
-                                  <div
-                                    className={`h-3 rounded-full transition-all duration-1000 progress-bar-fill ${
-                                      statusClasses.includes('bg-emerald') ? 'bg-gradient-to-r from-emerald-500 to-emerald-600' : 
-                                      statusClasses.includes('bg-red') ? 'bg-gradient-to-r from-red-500 to-red-600' : 
-                                      'bg-gradient-to-r from-blue-500 to-blue-600'
-                                    }`}
-                                    style={{ width: `${Math.min(assessmentProgress.score, 100)}%` }}
-                                  ></div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                          
-                          <div className="mt-4 md:mt-0 md:ml-6">
-                            <button className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg">
-                              View Details
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+
+
+       
       </div>
     </>
   );

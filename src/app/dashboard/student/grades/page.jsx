@@ -81,18 +81,28 @@ export default function MyGrades() {
       
       // Add grades from submissions (assignment-based grades)
       submissionsData.submissions?.forEach(submission => {
-        if (submission.finalGrade && submission.status === 'graded') {
+        // Include both final grades and AI grades
+        const hasGrade = submission.finalGrade || submission.aiGrade;
+        const isGraded = submission.status === 'graded' || submission.status === 'ai_graded';
+        
+        if (hasGrade && isGraded) {
           const moduleId = submission.moduleId;
+          const grade = submission.finalGrade || submission.aiGrade;
+          
           // Only use submission grade if there's no module mark or if submission grade is higher
           if (!moduleGrades[moduleId] || 
-              (moduleGrades[moduleId].source !== 'module_mark' && submission.finalGrade > moduleGrades[moduleId].grade)) {
+              (moduleGrades[moduleId].source !== 'module_mark' && grade > moduleGrades[moduleId].grade)) {
             moduleGrades[moduleId] = {
-              grade: submission.finalGrade,
+              grade: grade,
               source: 'assignment',
               assignmentTitle: submission.assignment?.title,
               submittedAt: submission.submittedAt,
               educatorFeedback: submission.educatorFeedback,
-              gradedBy: submission.gradedBy || 'Educator'
+              aiGrade: submission.aiGrade,
+              aiOverallFeedback: submission.aiOverallFeedback,
+              finalGrade: submission.finalGrade,
+              gradedBy: submission.gradedBy || (submission.aiGrade ? 'AI Assistant' : 'Educator'),
+              isAIGraded: !!submission.aiGrade && !submission.finalGrade
             };
           }
         }
@@ -114,6 +124,10 @@ export default function MyGrades() {
           submittedAt: gradeData.submittedAt,
           gradedAt: gradeData.gradedAt,
           educatorFeedback: gradeData.educatorFeedback,
+          aiGrade: gradeData.aiGrade,
+          aiOverallFeedback: gradeData.aiOverallFeedback,
+          finalGrade: gradeData.finalGrade,
+          isAIGraded: gradeData.isAIGraded,
           gradedBy: gradeData.gradedBy,
           status: gradeData.status,
           hasSubmission: gradeData.source === 'assignment'
@@ -301,6 +315,12 @@ export default function MyGrades() {
                           Graded by: {g.gradedBy}
                         </span>
                       )}
+                      
+                      {g.isAIGraded && (
+                        <span className="inline-block px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full ml-2">
+                          🤖 AI Graded
+                        </span>
+                      )}
                     </div>
                     
                     {g.assignmentTitle && (
@@ -349,6 +369,18 @@ export default function MyGrades() {
                   <div className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded">
                     <p className="text-sm font-semibold text-blue-800 mb-1">Educator Feedback:</p>
                     <p className="text-sm text-blue-700">{g.educatorFeedback}</p>
+                  </div>
+                )}
+                
+                {g.aiOverallFeedback && (
+                  <div className="bg-purple-50 border-l-4 border-purple-400 p-3 rounded mt-2">
+                    <p className="text-sm font-semibold text-purple-800 mb-1">AI Feedback:</p>
+                    <p className="text-sm text-purple-700">{g.aiOverallFeedback}</p>
+                    {g.aiGrade && g.finalGrade && (
+                      <p className="text-xs text-purple-600 mt-1">
+                        AI Grade: {g.aiGrade}% | Final Grade: {g.finalGrade}%
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
