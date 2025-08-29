@@ -2,7 +2,6 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import FloatingChatbot from '@/components/FloatingChatbot';
 
 // Inline SVG menu icon (no external icon deps)
 const MenuIcon = ({ size = 24, strokeWidth = 2, ...props }) => (
@@ -171,9 +170,6 @@ export default function EducatorDashboardLayout({ children }) {
 
         {/* Main Content */}
         <main className="flex-1 p-8 overflow-auto">{children}</main>
-
-        {/* Floating Chatbot */}
-        <FloatingChatbot />
       </div>
     </>
   );

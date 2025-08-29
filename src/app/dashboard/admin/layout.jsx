@@ -2,7 +2,6 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import FloatingChatbot from '@/components/FloatingChatbot';
 import {
   LayoutDashboard, UserRoundCog, BookOpen, Wrench, TrendingUp,
   Bell, ChartBar, Menu,
@@ -163,9 +162,6 @@ export default function AdminLayout({ children }) {
 
           {children}
         </main>
-
-        {/* Floating Chatbot */}
-        <FloatingChatbot />
       </div>
     </>
   );
