@@ -117,8 +117,9 @@ export default function AdminParticipationPage() {
       try {
         const statsResponse = await adminAPI.getSystemStats();
         setSystemStats(statsResponse.stats || null);
+        console.log('✅ System stats loaded:', statsResponse.stats);
       } catch (statsError) {
-        console.warn('⚠️ System stats not available:', statsError.message);
+        console.warn('⚠️ System stats not available, using fallback calculations:', statsError.message);
         setSystemStats(null);
       }
       
@@ -227,15 +228,15 @@ export default function AdminParticipationPage() {
     ? participationData 
     : participationData.filter(p => p.moduleId === selectedModule);
 
-  // Calculate admin-specific metrics
+  // Calculate admin-specific metrics using system stats when available
   const adminMetrics = {
-    totalStudents: participationData.length,
-    totalModules: modules.length,
-    criticalStudents: participationData.filter(p => p.status === 'critical').length,
-    warningStudents: participationData.filter(p => p.status === 'warning').length,
-    averageAttendance: participationData.length > 0 
+    totalStudents: systemStats?.overview?.totalStudents || participationData.length,
+    totalModules: systemStats?.overview?.totalModules || modules.length,
+    criticalStudents: systemStats?.participation?.criticalRiskStudents || participationData.filter(p => p.status === 'critical').length,
+    warningStudents: systemStats?.participation?.warningLevelStudents || participationData.filter(p => p.status === 'warning').length,
+    averageAttendance: systemStats?.participation?.averageAttendanceRate || (participationData.length > 0 
       ? Math.round(participationData.reduce((sum, p) => sum + p.attendancePercentage, 0) / participationData.length) 
-      : 0
+      : 0)
   };
 
   if (loading) {
@@ -380,6 +381,11 @@ export default function AdminParticipationPage() {
               </div>
               <div className="text-sm text-gray-400">
                 Monitoring {filteredParticipation.length} student records
+                {systemStats ? (
+                  <span className="ml-2 text-green-400">• Using live system data</span>
+                ) : (
+                  <span className="ml-2 text-yellow-400">• Using fallback calculations</span>
+                )}
               </div>
             </div>
           </div>

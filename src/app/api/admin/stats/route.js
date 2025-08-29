@@ -69,6 +69,13 @@ export async function GET(request) {
     };
 
     console.log('✅ Admin statistics calculated successfully');
+    console.log('📊 Stats summary:', {
+      totalStudents: stats.overview.totalStudents,
+      totalModules: stats.overview.totalModules,
+      systemAverage: stats.participation.averageAttendanceRate,
+      criticalRiskStudents: stats.participation.criticalRiskStudents,
+      warningLevelStudents: stats.participation.warningLevelStudents
+    });
 
     return NextResponse.json({
       success: true,
