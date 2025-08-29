@@ -1,11 +1,13 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
-import { Bell, MessageSquare, User, Calendar, AlertCircle } from "lucide-react";
+import { Bell, MessageSquare, User, Calendar, AlertCircle, Megaphone, UserCheck } from "lucide-react";
 
 export default function LectureFeedbackAlerts() {
   const { data: session } = useSession();
   const [feedbackAlerts, setFeedbackAlerts] = useState([]);
+  const [adminNotifications, setAdminNotifications] = useState([]);
+  const [activeTab, setActiveTab] = useState('notifications'); // 'notifications' or 'feedback'
   const [isMounted, setIsMounted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -13,9 +15,37 @@ export default function LectureFeedbackAlerts() {
   useEffect(() => {
     setIsMounted(true);
     if (session?.user?.id) {
-      fetchLectureFeedback();
+      fetchData();
     }
   }, [session]);
+
+  const fetchData = async () => {
+    await Promise.all([
+      fetchLectureFeedback(),
+      fetchAdminNotifications()
+    ]);
+  };
+
+  const fetchAdminNotifications = async () => {
+    try {
+      const response = await fetch(`/api/notifications?userType=student&userId=${session.user.id}`, {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setAdminNotifications(data.notifications || []);
+        } else {
+          console.error('Failed to fetch notifications:', data.error);
+        }
+      } else {
+        console.error('Server error fetching notifications:', response.status);
+      }
+    } catch (error) {
+      console.error('Error fetching admin notifications:', error);
+    }
+  };
 
   const fetchLectureFeedback = async () => {
     try {
@@ -84,6 +114,42 @@ export default function LectureFeedbackAlerts() {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  // Mark notification as read
+  const markNotificationAsRead = async (notificationId) => {
+    try {
+      const response = await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          notificationId,
+          userId: session.user.id
+        })
+      });
+      
+      if (response.ok) {
+        // Update local state to mark as read
+        setAdminNotifications(prev => 
+          prev.map(notification => 
+            notification.id === notificationId 
+              ? { ...notification, isRead: true }
+              : notification
+          )
+        );
+      }
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
+  };
+
+  // Dismiss notification (mark as read and remove from view)
+  const dismissNotification = async (notificationId) => {
+    await markNotificationAsRead(notificationId);
+    setAdminNotifications(prev => prev.filter(n => n.id !== notificationId));
   };
 
   // Dismiss feedback alert (mark as read)
@@ -186,108 +252,207 @@ export default function LectureFeedbackAlerts() {
         {/* Animated Divider */}
         <div className="w-full h-[2px] bg-blue-600 rounded-full mb-8 animated-divider"></div>
 
-        {/* Error Message */}
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
-            <div className="flex items-center">
-              <AlertCircle className="w-5 h-5 mr-2" />
-              <p>{error}</p>
+        {/* Tab Navigation */}
+        <div className="flex space-x-1 mb-6">
+          <button
+            onClick={() => setActiveTab('notifications')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+              activeTab === 'notifications'
+                ? 'bg-blue-600 text-white shadow-lg'
+                : 'bg-white/10 text-gray-300 hover:bg-white/20 hover:text-white'
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <Megaphone className="w-4 h-4" />
+              <span>Announcements</span>
+              {adminNotifications.filter(n => !n.isRead).length > 0 && (
+                <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
+                  {adminNotifications.filter(n => !n.isRead).length}
+                </span>
+              )}
             </div>
-            <button
-              onClick={() => setError(null)}
-              className="text-red-500 hover:text-red-700 ml-2 underline text-sm"
-            >
-              Dismiss
-            </button>
-          </div>
-        )}
+          </button>
+          <button
+            onClick={() => setActiveTab('feedback')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+              activeTab === 'feedback'
+                ? 'bg-blue-600 text-white shadow-lg'
+                : 'bg-white/10 text-gray-300 hover:bg-white/20 hover:text-white'
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <UserCheck className="w-4 h-4" />
+              <span>Educator Feedback</span>
+              {feedbackAlerts.filter(f => f.isNew).length > 0 && (
+                <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
+                  {feedbackAlerts.filter(f => f.isNew).length}
+                </span>
+              )}
+            </div>
+          </button>
+        </div>
 
-        {/* Loading State */}
-        {loading && (
-          <div className="flex justify-center items-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            <span className="ml-3 text-gray-600">Loading feedback alerts...</span>
+        {/* Content based on active tab */}
+        {activeTab === 'notifications' ? (
+          /* Admin Notifications */
+          <div className="space-y-4">
+            {loading ? (
+              <div className="text-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-600">Loading announcements...</p>
+              </div>
+            ) : adminNotifications.length === 0 ? (
+              <div className="text-center py-12">
+                <Megaphone className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-700 mb-2">No Announcements</h3>
+                <p className="text-gray-500">You're all caught up! No new announcements from administration.</p>
+              </div>
+            ) : (
+              adminNotifications.map((notification, index) => (
+                <div
+                  key={notification.id}
+                  className={`glass-effect p-6 rounded-xl shadow-lg transform transition-all duration-300 hover:scale-[1.01] ${
+                    isMounted ? 'alert-card-animated' : 'opacity-0 scale-95'
+                  } ${
+                    !notification.isRead ? 'border-l-4 border-blue-500' : 'border-l-4 border-gray-300'
+                  }`}
+                  style={{ animationDelay: `${0.1 + index * 0.05}s` }}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Megaphone className="w-5 h-5 text-blue-600" />
+                        <span className="text-sm font-medium text-blue-600">Admin Announcement</span>
+                        {!notification.isRead && (
+                          <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full font-medium">
+                            NEW
+                          </span>
+                        )}
+                        <span className="text-xs text-gray-500">
+                          • {formatDate(notification.createdAt)}
+                        </span>
+                      </div>
+                      
+                      <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded">
+                        <p className="text-gray-800 leading-relaxed whitespace-pre-wrap">
+                          {notification.message}
+                        </p>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 mt-3 text-xs text-gray-500">
+                        <User className="w-3 h-3" />
+                        <span>From: {notification.createdByName}</span>
+                        
+                        {notification.targetGroup !== 'all' && (
+                          <>
+                            <span>•</span>
+                            <span className="px-2 py-1 bg-gray-100 rounded text-gray-600">
+                              Target: {notification.targetGroup}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <button
+                      onClick={() => dismissNotification(notification.id)}
+                      className="text-gray-400 hover:text-gray-600 ml-4 p-1 rounded-full hover:bg-gray-100 dismiss-btn transition-all duration-200"
+                      title="Dismiss notification"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
-        )}
+        ) : (
+          /* Educator Feedback */
+          <div className="space-y-4">
+            {/* Error Message */}
+            {error && (
+              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
+                <div className="flex items-center">
+                  <AlertCircle className="w-5 h-5 mr-2" />
+                  <p>{error}</p>
+                </div>
+                <button
+                  onClick={() => setError(null)}
+                  className="text-red-500 hover:text-red-700 ml-2 underline text-sm"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
 
-        {/* Feedback Alerts */}
-        {!loading && (
-          <div className="space-y-6">
-            {feedbackAlerts.length > 0 ? (
-              feedbackAlerts.map((alert, idx) => (
+            {/* Loading State */}
+            {loading ? (
+              <div className="text-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-600">Loading feedback...</p>
+              </div>
+            ) : feedbackAlerts.length === 0 ? (
+              /* Empty State */
+              <div className="text-center py-12">
+                <UserCheck className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-700 mb-2">No Feedback</h3>
+                <p className="text-gray-500">You're all caught up! No new educator feedback available.</p>
+              </div>
+            ) : (
+              /* Feedback Alerts List */
+              feedbackAlerts.map((alert, index) => (
                 <div
                   key={alert.id}
-                  className={`glass-effect p-6 rounded-xl shadow-lg
-                    transform hover:scale-[1.01] transition-all duration-300
-                    ${isMounted ? 'alert-card-animated' : 'opacity-0 scale-95'}
-                    ${alert.isNew ? 'ring-2 ring-blue-400 ring-opacity-50' : ''}`}
-                  style={{
-                    animationDelay: `${0.2 + idx * 0.08}s`,
-                    borderLeft: `8px solid ${alert.isRepeatModule ? '#EF4444' : '#3B82F6'}`
-                  }}
+                  className={`glass-effect p-6 rounded-xl shadow-lg transform transition-all duration-300 hover:scale-[1.01] ${
+                    isMounted ? 'alert-card-animated' : 'opacity-0 scale-95'
+                  }`}
+                  style={{ animationDelay: `${0.1 + index * 0.05}s` }}
                 >
-                  <div className="flex flex-col sm:flex-row justify-between items-start">
-                    <div className="flex-1 mb-4 sm:mb-0">
-                      <div className="flex items-center mb-2">
-                        <MessageSquare className="w-5 h-5 mr-2 text-blue-600" />
-                        <h2 className="text-xl font-semibold text-gray-800">{alert.moduleTitle}</h2>
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-3">
+                        <MessageSquare className="w-5 h-5 text-green-600" />
+                        <span className="text-lg font-semibold text-gray-800">{alert.moduleTitle}</span>
                         {alert.isNew && (
-                          <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
+                          <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-medium">
                             NEW
                           </span>
                         )}
                         {alert.isRepeatModule && (
-                          <span className="ml-2 px-2 py-1 bg-red-100 text-red-800 text-xs font-medium rounded-full">
+                          <span className="bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full font-medium">
                             REPEAT MODULE
                           </span>
                         )}
                       </div>
                       
-                      <div className="flex items-center text-sm text-gray-600 mb-3">
-                        <User className="w-4 h-4 mr-1" />
-                        <span className="mr-4">From: {alert.educatorName}</span>
-                        <Calendar className="w-4 h-4 mr-1" />
-                        <span>{formatDate(alert.createdAt)}</span>
+                      <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded">
+                        <p className="text-gray-800 leading-relaxed whitespace-pre-wrap">
+                          {alert.feedback}
+                        </p>
                       </div>
                       
-                      <div className="bg-gray-50 p-4 rounded-lg border-l-4 border-blue-400">
-                        <p className="text-gray-700 leading-relaxed">{alert.feedback}</p>
+                      <div className="flex items-center gap-4 mt-4 text-sm text-gray-600">
+                        <div className="flex items-center gap-1">
+                          <User className="w-4 h-4" />
+                          <span>From: {alert.educatorName}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Calendar className="w-4 h-4" />
+                          <span>{formatDate(alert.createdAt)}</span>
+                        </div>
                       </div>
                     </div>
-
-                    <div className="flex flex-col items-center sm:items-end space-y-3 sm:ml-6">
-                      <button
-                        onClick={() => {
-                          // Navigate to module details or open feedback modal
-                          console.log(`Viewing details for ${alert.moduleTitle} feedback`);
-                        }}
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-full shadow-md transition-all duration-200 ease-in-out btn-hover-effect focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
-                      >
-                        View Module
-                      </button>
-                      <button
-                        onClick={() => dismissAlert(alert.id)}
-                        className="text-gray-600 border border-gray-300 px-3 py-1 rounded-full text-sm transition-all duration-200 ease-in-out dismiss-btn hover:text-red-500"
-                      >
-                        Dismiss
-                      </button>
-                    </div>
+                    
+                    <button
+                      onClick={() => dismissAlert(alert.id)}
+                      className="text-gray-400 hover:text-gray-600 ml-4 p-2 rounded-full hover:bg-gray-100 dismiss-btn transition-all duration-200"
+                      title="Dismiss alert"
+                    >
+                      ×
+                    </button>
                   </div>
                 </div>
               ))
-            ) : (
-              <div className={`glass-effect p-6 rounded-xl shadow-lg text-center
-                  transform ${isMounted ? 'alert-card-animated' : 'opacity-0 scale-95'}`}
-                  style={{ animationDelay: '0.1s' }}>
-                <MessageSquare className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-gray-600 mb-2">No Lecture Feedback</h3>
-                <p className="text-gray-500">
-                  You don't have any lecture feedback alerts at the moment.
-                </p>
-                <p className="text-sm text-gray-400 mt-2">
-                  Feedback from your educators will appear here.
-                </p>
-              </div>
             )}
           </div>
         )}

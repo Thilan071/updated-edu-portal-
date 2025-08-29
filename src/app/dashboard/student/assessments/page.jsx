@@ -197,34 +197,57 @@ export default function MyAssessments() {
         const hasPractical = moduleData.practicalMaxScore > 0;
         const hasAssignment = moduleData.assignmentMaxScore > 0;
         
-        // Calculate percentage scores
-        const examPercentage = moduleData.examMaxScore > 0 ? (moduleData.examScore / moduleData.examMaxScore) * 100 : 0;
-        const practicalPercentage = moduleData.practicalMaxScore > 0 ? (moduleData.practicalScore / moduleData.practicalMaxScore) * 100 : 0;
-        const assignmentPercentage = moduleData.assignmentMaxScore > 0 ? (moduleData.assignmentScore / moduleData.assignmentMaxScore) * 100 : 0;
-        const totalPercentage = examPercentage + Math.max(practicalPercentage, assignmentPercentage);
+        // Calculate percentage scores with comprehensive null/undefined/NaN checks
+        const examScore = moduleData.examScore || 0;
+        const examMaxScore = moduleData.examMaxScore || 0;
+        const practicalScore = moduleData.practicalScore || 0;
+        const practicalMaxScore = moduleData.practicalMaxScore || 0;
+        const assignmentScore = moduleData.assignmentScore || 0;
+        const assignmentMaxScore = moduleData.assignmentMaxScore || 0;
+        
+        // Safe percentage calculations with proper validation
+        const examPercentage = (examMaxScore > 0 && !isNaN(examScore) && !isNaN(examMaxScore)) 
+          ? (examScore / examMaxScore) * 100 
+          : 0;
+        const practicalPercentage = (practicalMaxScore > 0 && !isNaN(practicalScore) && !isNaN(practicalMaxScore)) 
+          ? (practicalScore / practicalMaxScore) * 100 
+          : 0;
+        const assignmentPercentage = (assignmentMaxScore > 0 && !isNaN(assignmentScore) && !isNaN(assignmentMaxScore)) 
+          ? (assignmentScore / assignmentMaxScore) * 100 
+          : 0;
+        
+        // Ensure no NaN values with additional safety checks
+        const safeExamPercentage = (isNaN(examPercentage) || examPercentage < 0) ? 0 : Math.min(examPercentage, 100);
+        const safePracticalPercentage = (isNaN(practicalPercentage) || practicalPercentage < 0) ? 0 : Math.min(practicalPercentage, 100);
+        const safeAssignmentPercentage = (isNaN(assignmentPercentage) || assignmentPercentage < 0) ? 0 : Math.min(assignmentPercentage, 100);
+        
+        // Calculate total percentage safely
+        const higherOfPracticalOrAssignment = Math.max(safePracticalPercentage, safeAssignmentPercentage);
+        const totalPercentage = safeExamPercentage + higherOfPracticalOrAssignment;
+        const safeTotalPercentage = (isNaN(totalPercentage) || totalPercentage < 0) ? 0 : Math.min(totalPercentage, 200);
+        
+        moduleData.examPercentage = safeExamPercentage;
+        moduleData.practicalPercentage = safePracticalPercentage;
+        moduleData.assignmentPercentage = safeAssignmentPercentage;
+        moduleData.totalPercentage = safeTotalPercentage;
         
         console.log('📈 Module', moduleId, 'percentages:', {
-          exam: examPercentage,
-          practical: practicalPercentage,
-          assignment: assignmentPercentage,
-          total: totalPercentage
+          exam: safeExamPercentage,
+          practical: safePracticalPercentage,
+          assignment: safeAssignmentPercentage,
+          total: safeTotalPercentage
         });
         
-        moduleData.examPercentage = examPercentage;
-        moduleData.practicalPercentage = practicalPercentage;
-        moduleData.assignmentPercentage = assignmentPercentage;
-        moduleData.totalPercentage = totalPercentage;
-        
         // Module is complete only if BOTH exam AND (practical OR assignment) are completed and total >= 70%
-        const examCompleted = hasExam && examPercentage > 0;
-        const practicalOrAssignmentCompleted = (hasPractical && practicalPercentage > 0) || (hasAssignment && assignmentPercentage > 0);
+        const examCompleted = hasExam && safeExamPercentage > 0;
+        const practicalOrAssignmentCompleted = (hasPractical && safePracticalPercentage > 0) || (hasAssignment && safeAssignmentPercentage > 0);
         
-        moduleData.isComplete = examCompleted && practicalOrAssignmentCompleted && totalPercentage >= 70;
+        moduleData.isComplete = examCompleted && practicalOrAssignmentCompleted && safeTotalPercentage >= 70;
         
         // Pass status: only pass if both assessment types are completed and score >= 70%
-        if (examCompleted && practicalOrAssignmentCompleted && totalPercentage >= 70) {
+        if (examCompleted && practicalOrAssignmentCompleted && safeTotalPercentage >= 70) {
           moduleData.passStatus = 'passed';
-        } else if (examCompleted && practicalOrAssignmentCompleted && totalPercentage < 70) {
+        } else if (examCompleted && practicalOrAssignmentCompleted && safeTotalPercentage < 70) {
           moduleData.passStatus = 'failed';
         } else if (hasExam || hasPractical || hasAssignment) {
           moduleData.passStatus = 'incomplete';
@@ -404,11 +427,33 @@ export default function MyAssessments() {
         const totalPossible = 200; // 100% exam + 100% practical/assignment
         const passThreshold = totalPossible * 0.7; // 70% of 200% = 140%
         
-        // Calculate percentage scores
-        const examPercentage = moduleData.examMaxScore > 0 ? (moduleData.examScore / moduleData.examMaxScore) * 100 : 0;
-        const practicalPercentage = moduleData.practicalMaxScore > 0 ? (moduleData.practicalScore / moduleData.practicalMaxScore) * 100 : 0;
-        const assignmentPercentage = moduleData.assignmentMaxScore > 0 ? (moduleData.assignmentScore / moduleData.assignmentMaxScore) * 100 : 0;
-        const totalPercentage = examPercentage + Math.max(practicalPercentage, assignmentPercentage);
+        // Calculate percentage scores with comprehensive safety checks
+        const examScore = moduleData.examScore || 0;
+        const examMaxScore = moduleData.examMaxScore || 0;
+        const practicalScore = moduleData.practicalScore || 0;
+        const practicalMaxScore = moduleData.practicalMaxScore || 0;
+        const assignmentScore = moduleData.assignmentScore || 0;
+        const assignmentMaxScore = moduleData.assignmentMaxScore || 0;
+        
+        // Safe percentage calculations
+        const examPercentage = (examMaxScore > 0 && !isNaN(examScore) && !isNaN(examMaxScore)) 
+          ? (examScore / examMaxScore) * 100 
+          : 0;
+        const practicalPercentage = (practicalMaxScore > 0 && !isNaN(practicalScore) && !isNaN(practicalMaxScore)) 
+          ? (practicalScore / practicalMaxScore) * 100 
+          : 0;
+        const assignmentPercentage = (assignmentMaxScore > 0 && !isNaN(assignmentScore) && !isNaN(assignmentMaxScore)) 
+          ? (assignmentScore / assignmentMaxScore) * 100 
+          : 0;
+        
+        // Ensure no NaN values with bounds checking
+        const safeExamPercentage = (isNaN(examPercentage) || examPercentage < 0) ? 0 : Math.min(examPercentage, 100);
+        const safePracticalPercentage = (isNaN(practicalPercentage) || practicalPercentage < 0) ? 0 : Math.min(practicalPercentage, 100);
+        const safeAssignmentPercentage = (isNaN(assignmentPercentage) || assignmentPercentage < 0) ? 0 : Math.min(assignmentPercentage, 100);
+        
+        const higherOfPracticalOrAssignment = Math.max(safePracticalPercentage, safeAssignmentPercentage);
+        const totalPercentage = safeExamPercentage + higherOfPracticalOrAssignment;
+        const safeTotalPercentage = (isNaN(totalPercentage) || totalPercentage < 0) ? 0 : Math.min(totalPercentage, 200);
         
         console.log('📈 Module', moduleId, 'percentages:', {
           exam: examPercentage,
@@ -417,20 +462,23 @@ export default function MyAssessments() {
           total: totalPercentage
         });
         
-        moduleData.examPercentage = examPercentage;
-        moduleData.practicalPercentage = practicalPercentage;
-        moduleData.assignmentPercentage = assignmentPercentage;
-        moduleData.totalPercentage = totalPercentage;
+        moduleData.examPercentage = safeExamPercentage;
+        moduleData.practicalPercentage = safePracticalPercentage;
+        moduleData.assignmentPercentage = safeAssignmentPercentage;
+        moduleData.totalPercentage = safeTotalPercentage;
         
-        // Module is complete if both exam and (practical OR assignment) are done and total >= 70%
-        moduleData.isComplete = hasExam && (hasPractical || hasAssignment) && totalPercentage >= 70;
+        // Module is complete only if BOTH exam AND (practical OR assignment) are completed and total >= 70%
+        const examCompleted = hasExam && safeExamPercentage > 0;
+        const practicalOrAssignmentCompleted = (hasPractical && safePracticalPercentage > 0) || (hasAssignment && safeAssignmentPercentage > 0);
         
-        if (totalPercentage >= 70) {
+        moduleData.isComplete = examCompleted && practicalOrAssignmentCompleted && safeTotalPercentage >= 70;
+        
+        // Pass status: only pass if both assessment types are completed and score >= 70%
+        if (examCompleted && practicalOrAssignmentCompleted && safeTotalPercentage >= 70) {
           moduleData.passStatus = 'passed';
-        } else if (hasExam && (hasPractical || hasAssignment)) {
+        } else if (examCompleted && practicalOrAssignmentCompleted && safeTotalPercentage < 70) {
           moduleData.passStatus = 'failed';
         } else if (hasExam || hasPractical || hasAssignment) {
-          // If any assessment/assignment is started, show as in progress
           moduleData.passStatus = 'incomplete';
         } else {
           moduleData.passStatus = 'incomplete';
@@ -806,15 +854,15 @@ export default function MyAssessments() {
                           <div className="grid grid-cols-3 gap-4 mb-3">
                             <div className="text-center">
                               <p className="text-xs text-gray-500">Exam</p>
-                              <p className="text-sm font-medium text-blue-600">{progress.examPercentage.toFixed(1)}%</p>
+                              <p className="text-sm font-medium text-blue-600">{(progress.examPercentage || 0).toFixed(1)}%</p>
                             </div>
                             <div className="text-center">
                               <p className="text-xs text-gray-500">Practical</p>
-                              <p className="text-sm font-medium text-green-600">{progress.practicalPercentage.toFixed(1)}%</p>
+                              <p className="text-sm font-medium text-green-600">{(progress.practicalPercentage || 0).toFixed(1)}%</p>
                             </div>
                             <div className="text-center">
                               <p className="text-xs text-gray-500">Total</p>
-                              <p className="text-sm font-medium text-purple-600">{progress.totalPercentage.toFixed(1)}%</p>
+                              <p className="text-sm font-medium text-purple-600">{(progress.totalPercentage || 0).toFixed(1)}%</p>
                             </div>
                           </div>
                         )}
@@ -825,12 +873,12 @@ export default function MyAssessments() {
                             <>
                               <div className="flex justify-between items-center mb-2">
                                 <span className="text-sm font-medium text-gray-700">Module Progress</span>
-                                <span className="text-sm text-gray-600">{progress.totalPercentage.toFixed(1)}% / 200%</span>
+                                <span className="text-sm text-gray-600">{(progress.totalPercentage || 0).toFixed(1)}% / 200%</span>
                               </div>
                               <div className="w-full module-progress-bar rounded-full h-3 shadow-inner">
                                 <div
                                   className="module-progress-fill h-3 rounded-full transition-all duration-1000 overflow-hidden"
-                                  style={{ width: `${Math.min(progress.totalPercentage / 2, 100)}%` }}
+                                  style={{ width: `${Math.min((progress.totalPercentage || 0) / 2, 100)}%` }}
                                 ></div>
                               </div>
                               <div className="flex justify-between text-xs text-gray-500 mt-1">

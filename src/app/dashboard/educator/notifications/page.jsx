@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { Bell, AlertTriangle, CheckCircle, RefreshCw, Plus } from 'lucide-react';
+import { Bell, AlertTriangle, CheckCircle, RefreshCw, Plus, Megaphone, Send } from 'lucide-react';
 import apiClient from '@/lib/apiClient';
 
 // Map type → icon + styles to fit the dark theme
@@ -21,7 +21,8 @@ const getTypeStyle = (type) => {
 // Optional: group by date heading
 const groupByDate = (items) =>
   items.reduce((acc, n) => {
-    (acc[n.date] = acc[n.date] || []).push(n);
+    const date = new Date(n.createdAt || n.date).toDateString();
+    (acc[date] = acc[date] || []).push(n);
     return acc;
   }, {});
 
@@ -29,6 +30,8 @@ export default function NotificationsPage() {
   const { data: session } = useSession();
   const [isMounted, setIsMounted] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [adminNotifications, setAdminNotifications] = useState([]);
+  const [activeTab, setActiveTab] = useState('admin'); // 'admin' or 'my'
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -43,8 +46,38 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     setIsMounted(true);
-    fetchNotifications();
-  }, []);
+    if (session?.user?.id) {
+      fetchData();
+    }
+  }, [session]);
+
+  const fetchData = async () => {
+    await Promise.all([
+      fetchNotifications(),
+      fetchAdminNotifications()
+    ]);
+  };
+
+  const fetchAdminNotifications = async () => {
+    try {
+      const response = await fetch(`/api/notifications?userType=educator&userId=${session.user.id}`, {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setAdminNotifications(data.notifications || []);
+        } else {
+          console.error('Failed to fetch admin notifications:', data.error);
+        }
+      } else {
+        console.error('Server error fetching admin notifications:', response.status);
+      }
+    } catch (error) {
+      console.error('Error fetching admin notifications:', error);
+    }
+  };
 
   const fetchNotifications = async () => {
     try {
@@ -92,6 +125,54 @@ export default function NotificationsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Mark notification as read
+  const markNotificationAsRead = async (notificationId) => {
+    try {
+      const response = await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          notificationId,
+          userId: session.user.id
+        })
+      });
+      
+      if (response.ok) {
+        // Update local state to mark as read
+        setAdminNotifications(prev => 
+          prev.map(notification => 
+            notification.id === notificationId 
+              ? { ...notification, isRead: true }
+              : notification
+          )
+        );
+      }
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
+  };
+
+  // Dismiss notification (mark as read and remove from view)
+  const dismissNotification = async (notificationId) => {
+    await markNotificationAsRead(notificationId);
+    setAdminNotifications(prev => prev.filter(n => n.id !== notificationId));
+  };
+
+  const formatDate = (date) => {
+    if (!date) return 'Unknown date';
+    const notificationDate = date instanceof Date ? date : new Date(date);
+    return notificationDate.toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   const handleCreateNotification = async (e) => {
@@ -165,7 +246,7 @@ export default function NotificationsPage() {
             </div>
             <div className="flex gap-3">
               <button
-                onClick={fetchNotifications}
+                onClick={fetchData}
                 className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
                 disabled={loading}
               >
@@ -183,25 +264,114 @@ export default function NotificationsPage() {
           </div>
         </header>
 
-        {loading ? (
-          <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto"></div>
-            <p className="text-gray-400 mt-4">Loading notifications...</p>
-          </div>
-        ) : error ? (
-          <div className="text-center py-12">
-            <p className="text-red-400 mb-4">{error}</p>
-            <button 
-              onClick={fetchNotifications}
-              className="text-blue-400 hover:text-blue-300"
-            >
-              Try Again
-            </button>
-          </div>
-        ) : notifications.length === 0 ? (
-          <div className="text-center py-12">
-            <Bell className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-400">No notifications found. Send your first notification!</p>
+        {/* Tab Navigation */}
+        <div className="flex space-x-1 mb-6">
+          <button
+            onClick={() => setActiveTab('admin')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+              activeTab === 'admin'
+                ? 'bg-blue-600 text-white shadow-lg'
+                : 'bg-white/10 text-gray-300 hover:bg-white/20 hover:text-white'
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <Megaphone className="w-4 h-4" />
+              <span>Admin Announcements</span>
+              {adminNotifications.filter(n => !n.isRead).length > 0 && (
+                <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
+                  {adminNotifications.filter(n => !n.isRead).length}
+                </span>
+              )}
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('my')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+              activeTab === 'my'
+                ? 'bg-blue-600 text-white shadow-lg'
+                : 'bg-white/10 text-gray-300 hover:bg-white/20 hover:text-white'
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <Send className="w-4 h-4" />
+              <span>My Notifications</span>
+            </div>
+          </button>
+        </div>
+
+        {/* Content based on active tab */}
+        {activeTab === 'admin' ? (
+          /* Admin Notifications */
+          <div className="space-y-4">
+            {loading ? (
+              <div className="text-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto"></div>
+                <p className="text-gray-400 mt-4">Loading admin announcements...</p>
+              </div>
+            ) : adminNotifications.length === 0 ? (
+              <div className="text-center py-12">
+                <Megaphone className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-400">No admin announcements found.</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {adminNotifications.map((notification, index) => (
+                  <div
+                    key={notification.id}
+                    className={`glass-effect-dark rounded-2xl p-6 ${
+                      isMounted ? 'card-animated' : 'opacity-0 scale-95'
+                    } ${
+                      !notification.isRead ? 'border-l-4 border-blue-400' : ''
+                    }`}
+                    style={{ animationDelay: `${0.1 + index * 0.05}s` }}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Megaphone className="w-5 h-5 text-blue-400" />
+                          <span className="text-sm font-medium text-blue-400">Admin Announcement</span>
+                          {!notification.isRead && (
+                            <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded-full font-medium">
+                              NEW
+                            </span>
+                          )}
+                          <span className="text-xs text-gray-500">
+                            • {formatDate(notification.createdAt)}
+                          </span>
+                        </div>
+                        
+                        <div className="bg-blue-900/30 border-l-4 border-blue-400 p-4 rounded">
+                          <p className="text-white leading-relaxed whitespace-pre-wrap">
+                            {notification.message}
+                          </p>
+                        </div>
+                        
+                        <div className="flex items-center gap-2 mt-3 text-xs text-gray-400">
+                          <span>From: {notification.createdByName}</span>
+                          
+                          {notification.targetGroup !== 'all' && (
+                            <>
+                              <span>•</span>
+                              <span className="px-2 py-1 bg-gray-700 rounded text-gray-300">
+                                Target: {notification.targetGroup}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <button
+                        onClick={() => dismissNotification(notification.id)}
+                        className="text-gray-400 hover:text-white ml-4 p-1 rounded-full hover:bg-white/10 transition-all duration-200"
+                        title="Dismiss notification"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-6">
