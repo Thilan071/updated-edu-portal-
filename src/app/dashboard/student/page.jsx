@@ -114,7 +114,7 @@ export default function StudentDash() {
             textColor: "text-green-100"
           },
           {
-            title: "Average Grade",
+            title: "Average GPA",
             value: `${averageGrade}%`,
             icon: <TrendingUp className="w-6 h-6" />,
             color: "from-purple-500 to-pink-500",
@@ -156,7 +156,7 @@ export default function StudentDash() {
             textColor: "text-green-100"
           },
           {
-            title: "Average Grade",
+            title: "Average GPA",
             value: "0%",
             icon: <TrendingUp className="w-6 h-6" />,
             color: "from-purple-500 to-pink-500",
@@ -241,7 +241,7 @@ export default function StudentDash() {
       textColor: "text-green-100"
     },
     {
-      title: "Average Grade",
+      title: "Average GPA",
       value: "85%",
       icon: <TrendingUp className="w-6 h-6" />,
       color: "from-purple-500 to-pink-500",

@@ -115,7 +115,7 @@ export async function GET(request) {
         trend: "up"
       },
       {
-        title: "Average Grade",
+        title: "Average GPA",
         value: `${averageGrade}%`,
         change: averageGrade >= 70 ? "+2% from last month" : "Needs improvement",
         trend: averageGrade >= 70 ? "up" : "down"
