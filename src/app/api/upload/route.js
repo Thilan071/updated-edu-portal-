@@ -1,98 +1,121 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '../auth/[...nextauth]/route';
-import { writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
-import { existsSync } from 'fs';
+// app/api/upload/route.js
+import { NextResponse } from 'next/server';
+import { authenticateAPIRequest } from '@/lib/authUtils';
+import { uploadPDF } from '@/lib/fileUpload';
 
+// POST /api/upload - Handle file uploads
 export async function POST(request) {
   try {
-    // Check authentication
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, error: 'Authentication required' },
-        { status: 401 }
-      );
+    const { error, user } = await authenticateAPIRequest(request, ['student', 'educator', 'admin']);
+    if (error) {
+      return NextResponse.json({ error }, { status: 401 });
     }
 
-    // Parse form data
+    console.log('📤 Processing file upload for user:', user.uid);
+
+    // Parse the multipart form data
     const formData = await request.formData();
     const file = formData.get('file');
     const assignmentId = formData.get('assignmentId');
     const moduleId = formData.get('moduleId');
-    const type = formData.get('type') || 'general';
+    const type = formData.get('type') || 'assignment-submission';
 
-    // Validate file
-    if (!file || !(file instanceof File)) {
-      return NextResponse.json(
-        { success: false, error: 'No file provided' },
-        { status: 400 }
-      );
+    // Validate inputs
+    if (!file) {
+      return NextResponse.json({
+        success: false,
+        error: 'No file provided'
+      }, { status: 400 });
     }
 
-    // Validate file type (PDF only for self-assessment)
-    if (type === 'self-assessment' && file.type !== 'application/pdf') {
-      return NextResponse.json(
-        { success: false, error: 'Only PDF files are allowed for self-assessment' },
-        { status: 400 }
-      );
+    if (!assignmentId || !moduleId) {
+      return NextResponse.json({
+        success: false,
+        error: 'assignmentId and moduleId are required'
+      }, { status: 400 });
     }
 
-    // Validate file size (10MB limit)
-    const maxSize = 10 * 1024 * 1024; // 10MB
-    if (file.size > maxSize) {
-      return NextResponse.json(
-        { success: false, error: 'File size exceeds 10MB limit' },
-        { status: 400 }
-      );
-    }
-
-    // Create upload directory structure
-    const uploadDir = join(process.cwd(), 'public', 'uploads', type);
-    if (!existsSync(uploadDir)) {
-      await mkdir(uploadDir, { recursive: true });
-    }
-
-    // Generate unique filename
-    const timestamp = Date.now();
-    const originalName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const filename = `${timestamp}_${session.user.id}_${originalName}`;
-    const filepath = join(uploadDir, filename);
-
-    // Convert file to buffer and save
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    await writeFile(filepath, buffer);
-
-    // Generate public URL
-    const fileUrl = `/uploads/${type}/${filename}`;
-
-    return NextResponse.json({
-      success: true,
-      fileUrl,
-      filename: originalName,
+    console.log('📁 File details:', {
+      name: file.name,
       size: file.size,
-      type: file.type
+      type: file.type,
+      assignmentId,
+      moduleId
     });
 
+    // Validate file size (max 10MB)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSize) {
+      return NextResponse.json({
+        success: false,
+        error: 'File size must be less than 10MB'
+      }, { status: 400 });
+    }
+
+    // Validate file type (allow common document types)
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain'
+    ];
+
+    if (!allowedTypes.includes(file.type)) {
+      return NextResponse.json({
+        success: false,
+        error: 'Only PDF, DOC, DOCX, and TXT files are allowed'
+      }, { status: 400 });
+    }
+
+    try {
+      // Create a organized folder structure for uploads
+      const folder = `student-uploads/${user.uid}/${moduleId}/${assignmentId}`;
+      
+      // Upload file using the existing uploadPDF function (it works for all file types despite the name)
+      const uploadResult = await uploadPDF(file, folder);
+      
+      if (!uploadResult.success) {
+        throw new Error(uploadResult.error);
+      }
+
+      console.log('✅ File uploaded successfully:', {
+        filePath: uploadResult.filePath,
+        fileName: uploadResult.fileName,
+        fileSize: uploadResult.fileSize
+      });
+
+      return NextResponse.json({
+        success: true,
+        fileUrl: uploadResult.filePath,
+        fileName: uploadResult.fileName,
+        fileSize: uploadResult.fileSize,
+        storagePath: uploadResult.storagePath,
+        message: 'File uploaded successfully'
+      }, { status: 200 });
+
+    } catch (uploadError) {
+      console.error('❌ File upload failed:', uploadError);
+      return NextResponse.json({
+        success: false,
+        error: 'Failed to upload file: ' + uploadError.message
+      }, { status: 500 });
+    }
+
   } catch (error) {
-    console.error('Error uploading file:', error);
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    );
+    console.error('❌ Error in upload endpoint:', error);
+    return NextResponse.json({
+      success: false,
+      error: 'Internal server error during file upload'
+    }, { status: 500 });
   }
 }
 
-// Handle OPTIONS for CORS
-export async function OPTIONS() {
-  return new NextResponse(null, {
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    },
+// GET /api/upload - Get upload information
+export async function GET(request) {
+  return NextResponse.json({
+    message: 'File Upload API',
+    supportedTypes: ['PDF', 'DOC', 'DOCX', 'TXT'],
+    maxSize: '10MB',
+    usage: 'POST request with multipart/form-data containing file, assignmentId, and moduleId'
   });
 }

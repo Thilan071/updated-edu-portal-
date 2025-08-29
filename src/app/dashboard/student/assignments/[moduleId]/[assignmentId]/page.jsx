@@ -24,6 +24,7 @@ export default function AssignmentDetail() {
   const [aiAnalysis, setAiAnalysis] = useState(null);
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
   const [showAiAnalysis, setShowAiAnalysis] = useState(false);
+  const [autoGrading, setAutoGrading] = useState(false);
 
   useEffect(() => {
     if (status === 'authenticated' && session?.user) {
@@ -55,7 +56,7 @@ export default function AssignmentDetail() {
     formData.append('file', file);
     formData.append('assignmentId', assignmentId);
     formData.append('moduleId', moduleId);
-    formData.append('type', 'self-assessment');
+    formData.append('type', 'assignment-submission');
     
     try {
       const response = await fetch('/api/upload', {
@@ -75,66 +76,72 @@ export default function AssignmentDetail() {
 
   const analyzeWithAI = async (uploadedFile = null) => {
     setAiAnalyzing(true);
+    setAutoGrading(true);
+    
     try {
-      // Prepare uploaded files array
-      const uploadedFiles = [];
+      console.log('🤖 Starting AI analysis...');
+      
+      let fileUrl = null;
+      let fileName = '';
       
       // Handle file upload if provided
       if (uploadedFile) {
-        const uploadedUrl = await uploadFileToStorage(uploadedFile);
-        if (uploadedUrl) {
-          uploadedFiles.push(uploadedUrl);
+        console.log('📁 Uploading file:', uploadedFile.name);
+        fileUrl = await uploadFileToStorage(uploadedFile);
+        fileName = uploadedFile.name;
+        
+        if (!fileUrl) {
+          alert('Failed to upload file. Please try again.');
+          return;
         }
       }
-
-      const analysisData = {
-        assignmentId,
-        moduleId,
-        studentWork: submission,
-        uploadedFiles,
-        assessmentCriteria: assignment?.description || ''
-      };
-
-      const response = await apiClient.aiAssessmentAPI.analyze(analysisData);
       
-      if (response.success) {
-        const analysis = response.data.analysis;
+      // Call AI assessment API
+      const response = await fetch('/api/ai-assessment', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          moduleId,
+          assignmentId,
+          submissionText: submission || '',
+          fileUrl,
+          fileName
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'AI analysis failed');
+      }
+      
+      const result = await response.json();
+      
+      if (result.success && result.data.assessment) {
+        const analysis = result.data.assessment;
         setAiAnalysis(analysis);
-        
-        // Show AI analysis results
         setShowAiAnalysis(true);
         
-        // Automatically save the AI analysis progress to student assessment module
-        try {
-          await apiClient.selfAssessmentAPI.update({
-            assignmentId,
-            moduleId,
-            progressPercentage: analysis.progressPercentage,
-            workUploaded: true,
-            notes: `AI Analysis: ${analysis.overallFeedback}`,
-            fileUrl: uploadedFiles[0] || null,
-            aiAnalysis: analysis
-          });
-        } catch (error) {
-          console.error('Error saving AI analysis to assessment:', error);
-        }
+        console.log('✅ AI analysis completed:', {
+          progress: analysis.progressPercentage
+        });
         
-        setShowAiAnalysis(true);
+        // Show success message with progress information
+        alert(`🤖 AI Analysis Complete!\n\nYour work has been automatically assessed:\n• Progress: ${analysis.progressPercentage}%\n\nThis has been saved to your assessment progress.`);
         
-        // Show different messages based on how analysis was triggered
-        if (uploadedFile) {
-          alert(`AI analysis completed! Progress assessed at ${analysis.progressPercentage}% and saved to your assessment.`);
-        } else {
-          alert('AI analysis completed! Your progress has been automatically assessed and saved.');
-        }
+        // Refresh progress data to show updated values
+        await fetchAssignmentData();
       } else {
-        alert('Failed to analyze work with AI. Please try again.');
+        throw new Error('Invalid AI analysis response');
       }
     } catch (error) {
-      console.error('Error analyzing with AI:', error);
-      alert('Error analyzing work. Please try again.');
+      console.error('❌ Error during AI analysis:', error);
+      alert(`AI Analysis Failed: ${error.message}\n\nPlease try again or contact support if the issue persists.`);
     } finally {
       setAiAnalyzing(false);
+      setAutoGrading(false);
     }
   };
 
@@ -259,12 +266,15 @@ export default function AssignmentDetail() {
     const file = e.target.files[0];
     if (file) {
       setFileUpload(file);
-      setWorkUploaded(true);
       
-      // Automatically trigger AI analysis when file is uploaded
-      if (file.type === 'application/pdf') {
-        await analyzeWithAI(file);
-      }
+      // Automatically trigger AI analysis when ANY file is uploaded
+      console.log('📁 File selected:', file.name, 'Type:', file.type);
+      
+      // Show immediate feedback to user
+      setAiAnalyzing(true);
+      
+      // Trigger AI analysis automatically
+      await analyzeWithAI(file);
     }
   };
 
@@ -502,23 +512,34 @@ export default function AssignmentDetail() {
               
               <div>
                 <label className="block text-gray-300 mb-2">
-                  Upload Work (PDF) - AI Analysis Included
+                  🤖 Upload Work - Automatic AI Progress Analysis
                 </label>
+                <p className="text-sm text-gray-400 mb-3">
+                  Upload your work and it will be automatically analyzed by AI to generate a progress score and feedback.
+                </p>
                 <input
                   type="file"
-                  accept=".pdf"
+                  accept=".pdf,.doc,.docx,.txt"
                   onChange={handleFileChange}
-                  className="w-full p-3 bg-slate-800 border border-slate-600 rounded-lg text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+                  disabled={aiAnalyzing || autoGrading}
+                  className="w-full p-3 bg-slate-800 border border-slate-600 rounded-lg text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 />
-                {fileUpload && (
-                  <div className="mt-2 space-y-2">
-                    <p className="text-green-400">Selected: {fileUpload.name}</p>
-                    {aiAnalyzing && (
-                      <div className="flex items-center gap-2 text-purple-400">
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-400"></div>
-                        <span>Analyzing with AI...</span>
+                {(aiAnalyzing || autoGrading) && (
+                  <div className="mt-3 p-3 bg-blue-900/20 border border-blue-500/30 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-400"></div>
+                      <div>
+                        <p className="text-blue-300 font-medium">AI is analyzing your work...</p>
+                        <p className="text-blue-200 text-sm">This may take a few moments. Your progress score will be generated automatically.</p>
                       </div>
-                    )}
+                    </div>
+                  </div>
+                )}
+                {fileUpload && !aiAnalyzing && (
+                  <div className="mt-2 p-2 bg-green-900/20 border border-green-500/30 rounded-lg">
+                    <p className="text-green-300 text-sm">
+                      ✅ File uploaded: {fileUpload.name}
+                    </p>
                   </div>
                 )}
               </div>

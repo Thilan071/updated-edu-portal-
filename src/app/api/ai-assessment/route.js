@@ -1,180 +1,210 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '../auth/[...nextauth]/route';
-import GeminiService from '../../../lib/geminiService';
-import ModuleService from '../../../lib/moduleService';
+// app/api/ai-assessment/route.js
+import { NextResponse } from 'next/server';
+import { authenticateAPIRequest } from '@/lib/authUtils';
+import AIAssessmentService from '@/lib/aiAssessmentService';
+import ModuleService from '@/lib/moduleService';
 
-/**
- * GET - Analyze student work using Gemini AI
- */
+// POST /api/ai-assessment - Generate AI assessment for student work
 export async function POST(request) {
   try {
-    // Check authentication
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, error: 'Authentication required' },
-        { status: 401 }
-      );
+    const { error, user } = await authenticateAPIRequest(request, ['student']);
+    if (error) {
+      return NextResponse.json({ error }, { status: 401 });
     }
 
-    // Ensure user is a student
-    if (session.user.role !== 'student') {
-      return NextResponse.json(
-        { success: false, error: 'Only students can request AI assessment' },
-        { status: 403 }
-      );
-    }
-
-    const body = await request.json();
+    const requestData = await request.json();
     const {
-      assignmentId,
       moduleId,
-      studentWork,
-      uploadedFiles = [],
-      assessmentCriteria
-    } = body;
+      assignmentId,
+      submissionText = '',
+      fileUrl = null,
+      fileName = null
+    } = requestData;
 
     // Validate required fields
-    if (!assignmentId || !moduleId) {
-      return NextResponse.json(
-        { success: false, error: 'Missing required fields: assignmentId, moduleId' },
-        { status: 400 }
-      );
+    if (!moduleId || !assignmentId) {
+      return NextResponse.json({
+        success: false,
+        error: 'moduleId and assignmentId are required'
+      }, { status: 400 });
     }
 
-    const studentId = session.user.id;
-
-    // Get assignment details
-    const assignment = await ModuleService.getAssignmentTemplate(assignmentId);
-    if (!assignment) {
-      return NextResponse.json(
-        { success: false, error: 'Assignment not found' },
-        { status: 404 }
-      );
-    }
-
-    // Generate assessment criteria if not provided
-    let criteria = assessmentCriteria;
-    if (!criteria && assignment.description) {
-      criteria = await GeminiService.generateAssessmentCriteria(assignment.description);
-    }
-
-    // Prepare analysis parameters
-    const analysisParams = {
-      studentWork: studentWork || '',
-      assessmentCriteria: criteria || 'Standard assessment criteria: Completeness, accuracy, clarity, and adherence to requirements.',
-      assignmentTitle: assignment.title || 'Assignment',
-      assignmentDescription: assignment.description || '',
-      uploadedFiles
-    };
-
-    // Analyze work with Gemini
-    const analysisResult = await GeminiService.analyzeStudentWork(analysisParams);
-
-    if (!analysisResult.success) {
-      return NextResponse.json(
-        { success: false, error: 'Failed to analyze work', details: analysisResult.data },
-        { status: 500 }
-      );
-    }
-
-    // Store the AI analysis result
-    const aiAssessmentData = {
-      studentId,
-      assignmentId,
-      moduleId,
-      analysisResult: analysisResult.data,
-      studentWork,
-      uploadedFiles,
-      assessmentCriteria: criteria,
-      analyzedAt: new Date()
-    };
-
-    // Save AI assessment to database
-    await ModuleService.saveAIAssessment(aiAssessmentData);
-
-    // Update self-assessment with AI-suggested progress
-    const selfAssessmentData = {
-      progressPercentage: analysisResult.data.progressPercentage,
-      workUploaded: uploadedFiles.length > 0 || (studentWork && studentWork.trim().length > 0),
-      notes: `AI Analysis: ${analysisResult.data.overallFeedback}`,
-      fileUrl: uploadedFiles.length > 0 ? uploadedFiles[0] : '',
-      aiGenerated: true
-    };
-
-    await ModuleService.updateStudentSelfAssessment(
-      studentId,
+    console.log('🤖 Processing AI assessment request:', {
+      studentId: user.uid,
       moduleId,
       assignmentId,
-      selfAssessmentData
-    );
+      hasSubmission: submissionText.length > 0,
+      hasFile: !!fileUrl
+    });
+
+    // Check if student has submission text or uploaded file
+    if (!submissionText.trim() && !fileUrl) {
+      return NextResponse.json({
+        success: false,
+        error: 'Either submission text or uploaded file is required for AI assessment'
+      }, { status: 400 });
+    }
+
+    // Generate AI assessment
+    const assessmentResult = await AIAssessmentService.generateAIAssessment({
+      studentId: user.uid,
+      moduleId,
+      assignmentId,
+      submissionText,
+      fileUrl,
+      fileName
+    });
+
+    if (!assessmentResult.success) {
+      return NextResponse.json({
+        success: false,
+        error: 'Failed to generate AI assessment: ' + assessmentResult.error
+      }, { status: 500 });
+    }
+
+    console.log('✅ AI assessment generated successfully:', {
+      assessmentId: assessmentResult.data.id,
+      progress: assessmentResult.data.progressPercentage,
+      grade: assessmentResult.data.aiGrade
+    });
+
+    // Record progress in student_progress collection
+    try {
+      const progressData = AIAssessmentService.generateProgressData(assessmentResult.data);
+      const savedProgress = await ModuleService.recordStudentProgress(progressData);
+      
+      console.log('📊 Progress recorded to Firebase:', savedProgress.id);
+      
+      // Add progress reference to assessment result
+      assessmentResult.data.progressId = savedProgress.id;
+    } catch (progressError) {
+      console.error('❌ Error recording progress:', progressError);
+      // Continue without failing the request - assessment was successful
+    }
 
     return NextResponse.json({
       success: true,
       data: {
-        analysis: analysisResult.data,
-        suggestedProgress: analysisResult.data.progressPercentage,
-        selfAssessmentUpdated: true
+        assessment: assessmentResult.data,
+        message: 'AI assessment completed successfully'
       }
-    });
+    }, { status: 200 });
 
   } catch (error) {
-    console.error('Error in AI assessment:', error);
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    );
+    console.error('❌ Error in AI assessment endpoint:', error);
+    return NextResponse.json({
+      success: false,
+      error: 'Internal server error during AI assessment'
+    }, { status: 500 });
   }
 }
 
-/**
- * GET - Retrieve previous AI assessment
- */
+// GET /api/ai-assessment - Get existing AI assessment
 export async function GET(request) {
   try {
-    // Check authentication
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, error: 'Authentication required' },
-        { status: 401 }
-      );
+    const { error, user } = await authenticateAPIRequest(request, ['student', 'educator', 'admin']);
+    if (error) {
+      return NextResponse.json({ error }, { status: 401 });
     }
 
     const { searchParams } = new URL(request.url);
-    const assignmentId = searchParams.get('assignmentId');
     const moduleId = searchParams.get('moduleId');
+    const assignmentId = searchParams.get('assignmentId');
+    const studentId = searchParams.get('studentId') || user.uid;
 
-    if (!assignmentId || !moduleId) {
-      return NextResponse.json(
-        { success: false, error: 'Missing required parameters: assignmentId, moduleId' },
-        { status: 400 }
-      );
+    // Students can only access their own assessments
+    if (user.role === 'student' && studentId !== user.uid) {
+      return NextResponse.json({
+        success: false,
+        error: 'Access denied'
+      }, { status: 403 });
     }
 
-    const studentId = session.user.id;
-
-    // Get previous AI assessment
-    const aiAssessment = await ModuleService.getAIAssessment(studentId, moduleId, assignmentId);
-
-    if (!aiAssessment) {
-      return NextResponse.json(
-        { success: false, error: 'No AI assessment found' },
-        { status: 404 }
-      );
+    if (!moduleId || !assignmentId) {
+      return NextResponse.json({
+        success: false,
+        error: 'moduleId and assignmentId are required'
+      }, { status: 400 });
     }
+
+    console.log('🔍 Fetching AI assessment:', { studentId, moduleId, assignmentId });
+
+    const assessment = await AIAssessmentService.getAIAssessment(studentId, moduleId, assignmentId);
+
+    if (!assessment) {
+      return NextResponse.json({
+        success: false,
+        error: 'No AI assessment found for this assignment'
+      }, { status: 404 });
+    }
+
+    console.log('✅ AI assessment found:', assessment.id);
 
     return NextResponse.json({
       success: true,
-      data: aiAssessment
-    });
+      data: assessment
+    }, { status: 200 });
 
   } catch (error) {
-    console.error('Error retrieving AI assessment:', error);
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
+    console.error('❌ Error fetching AI assessment:', error);
+    return NextResponse.json({
+      success: false,
+      error: 'Internal server error'
+    }, { status: 500 });
+  }
+}
+
+// PATCH /api/ai-assessment - Update AI assessment
+export async function PATCH(request) {
+  try {
+    const { error, user } = await authenticateAPIRequest(request, ['student']);
+    if (error) {
+      return NextResponse.json({ error }, { status: 401 });
+    }
+
+    const requestData = await request.json();
+    const { assessmentId, ...updateData } = requestData;
+
+    if (!assessmentId) {
+      return NextResponse.json({
+        success: false,
+        error: 'assessmentId is required'
+      }, { status: 400 });
+    }
+
+    console.log('🔄 Updating AI assessment:', assessmentId);
+
+    // First get the assessment to verify ownership
+    const existingAssessment = await AIAssessmentService.getAIAssessment(
+      user.uid, 
+      updateData.moduleId, 
+      updateData.assignmentId
     );
+
+    if (!existingAssessment || existingAssessment.id !== assessmentId) {
+      return NextResponse.json({
+        success: false,
+        error: 'Assessment not found or access denied'
+      }, { status: 404 });
+    }
+
+    const updatedAssessment = await AIAssessmentService.updateAIAssessment(assessmentId, {
+      ...updateData,
+      studentId: user.uid // Ensure student can't change ownership
+    });
+
+    console.log('✅ AI assessment updated:', assessmentId);
+
+    return NextResponse.json({
+      success: true,
+      data: updatedAssessment
+    }, { status: 200 });
+
+  } catch (error) {
+    console.error('❌ Error updating AI assessment:', error);
+    return NextResponse.json({
+      success: false,
+      error: 'Internal server error'
+    }, { status: 500 });
   }
 }

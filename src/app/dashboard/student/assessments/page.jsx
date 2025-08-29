@@ -826,58 +826,48 @@ export default function MyAssessments() {
                           </div>
                         </div>
                         
-                        {/* Quick Progress Overview */}
-                        {progress && (
-                          <div className="grid grid-cols-3 gap-4 mb-3">
-                            <div className="text-center">
-                              <p className="text-xs text-gray-500">Exam</p>
-                              <p className="text-sm font-medium text-blue-600">{(progress.examPercentage || 0).toFixed(1)}%</p>
-                            </div>
-                            <div className="text-center">
-                              <p className="text-xs text-gray-500">Practical</p>
-                              <p className="text-sm font-medium text-green-600">{(progress.practicalPercentage || 0).toFixed(1)}%</p>
-                            </div>
-                            <div className="text-center">
-                              <p className="text-xs text-gray-500">Total</p>
-                              <p className="text-sm font-medium text-purple-600">{(progress.totalPercentage || 0).toFixed(1)}%</p>
-                            </div>
-                          </div>
-                        )}
+
                         
                         {/* Module Progress Bar */}
-                        <div className="mt-3">
+                        <div className="mt-4">
                           {progress ? (
                             <>
                               <div className="flex justify-between items-center mb-2">
-                                <span className="text-sm font-medium text-gray-700">Module Progress</span>
+                                <span className="text-sm font-medium text-gray-700">Overall Module Progress</span>
                                 <span className="text-sm text-gray-600">{(progress.totalPercentage || 0).toFixed(1)}% / 200%</span>
                               </div>
-                              <div className="w-full module-progress-bar rounded-full h-3 shadow-inner">
+                              <div className="w-full module-progress-bar rounded-full h-4 shadow-inner">
                                 <div
-                                  className="module-progress-fill h-3 rounded-full transition-all duration-1000 overflow-hidden"
+                                  className="module-progress-fill h-4 rounded-full transition-all duration-1000 overflow-hidden"
                                   style={{ width: `${Math.min((progress.totalPercentage || 0) / 2, 100)}%` }}
                                 ></div>
                               </div>
                               <div className="flex justify-between text-xs text-gray-500 mt-1">
                                 <span>0%</span>
-                                <span>50%</span>
-                                <span>100%</span>
+                                <span>50% (One Assessment)</span>
+                                <span>100% (Both Assessments)</span>
                               </div>
+                              <p className="text-xs text-gray-500 mt-1 text-center">
+                                Progress combines both Exam ({(progress.examPercentage || 0).toFixed(1)}%) and Assignment ({(progress.assignmentPercentage || 0).toFixed(1)}%) assessments
+                              </p>
                             </>
                           ) : (
                             <>
                               <div className="flex justify-between items-center mb-2">
-                                <span className="text-sm font-medium text-gray-700">Module Progress</span>
+                                <span className="text-sm font-medium text-gray-700">Overall Module Progress</span>
                                 <span className="text-sm text-gray-600">0%</span>
                               </div>
-                              <div className="w-full module-progress-bar rounded-full h-3 shadow-inner">
-                                <div className="bg-gray-300 h-3 rounded-full" style={{ width: '0%' }}></div>
+                              <div className="w-full module-progress-bar rounded-full h-4 shadow-inner">
+                                <div className="bg-gray-300 h-4 rounded-full" style={{ width: '0%' }}></div>
                               </div>
                               <div className="flex justify-between text-xs text-gray-500 mt-1">
                                 <span>0%</span>
-                                <span>50%</span>
-                                <span>100%</span>
+                                <span>50% (One Assessment)</span>
+                                <span>100% (Both Assessments)</span>
                               </div>
+                              <p className="text-xs text-gray-500 mt-1 text-center">
+                                Complete both Exam and Assignment assessments to track progress
+                              </p>
                             </>
                           )}
                         </div>
@@ -915,18 +905,48 @@ export default function MyAssessments() {
                               const statusClasses = assessmentProgress ? getStatusClasses(assessmentProgress.status) : 'bg-gray-500';
                               
                               return (
-                                <div key={assessment.id} className="glass-effect p-4 rounded-lg border-l-4 border-purple-400">
-                                  <h5 className="font-semibold text-gray-800 mb-2">{assessment.title}</h5>
-                                  <p className="text-sm text-gray-600 mb-2">
-                                    Due: {new Date(assessment.dueDate).toLocaleDateString()}
-                                  </p>
-                                  {assessmentProgress && (
-                                    <div className="mb-2">
-                                      <p className="text-sm font-medium text-blue-600">
-                                        Score: {assessmentProgress.score}%
-                                      </p>
+                                <div key={assessment.id} className="glass-effect p-4 rounded-lg border-l-4 border-purple-400 relative">
+                                  {/* AI Generated Badge */}
+                                  {assessmentProgress?.aiGenerated && (
+                                    <div className="absolute top-2 right-2">
+                                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-500 text-white text-xs rounded-full font-medium">
+                                        🤖 AI Progress
+                                      </span>
                                     </div>
                                   )}
+                                  
+                                  <h5 className="font-semibold text-gray-800 mb-2 pr-16">{assessment.title}</h5>
+                                  <p className="text-sm text-gray-600 mb-2">
+                                    Type: {assessment.type || 'Assessment'}
+                                  </p>
+                                  
+                                  {/* Progress Display */}
+                                  {assessmentProgress && (
+                                    <div className="mb-3">
+                                      <div className="flex justify-between items-center mb-1">
+                                        <span className="text-xs text-gray-500">Progress</span>
+                                        <span className="text-sm font-medium text-blue-600">
+                                          {assessmentProgress.progressPercentage || assessmentProgress.score || 0}%
+                                        </span>
+                                      </div>
+                                      <div className="w-full bg-gray-200 rounded-full h-2">
+                                        <div 
+                                          className="bg-blue-600 h-2 rounded-full transition-all duration-500" 
+                                          style={{ width: `${assessmentProgress.progressPercentage || assessmentProgress.score || 0}%` }}
+                                        ></div>
+                                      </div>
+                                      
+                                      {/* AI Progress Indicator */}
+                                      {assessmentProgress.aiGenerated && (
+                                        <div className="mt-2 p-2 bg-purple-50 border border-purple-200 rounded">
+                                          <p className="text-xs text-purple-700">
+                                            ✨ Progress tracked by AI assessment
+                                          </p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                  
                                   <button className="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded text-sm">
                                     View Details
                                   </button>
@@ -978,25 +998,65 @@ export default function MyAssessments() {
                         <div>
                           <h4 className="text-lg font-semibold text-gray-700 mb-3">✅ Completed Assignments</h4>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {moduleAssignments.completedAssignments.map((assignment) => (
-                              <div key={assignment.id} className="glass-effect p-4 rounded-lg border-l-4 border-green-500">
-                                <h5 className="font-semibold text-gray-800 mb-2">{assignment.title}</h5>
-                                <p className="text-sm text-gray-600 mb-1">
-                                  Submitted: {new Date(assignment.submission.submittedAt.seconds * 1000).toLocaleDateString()}
-                                </p>
-                                {assignment.submission.finalGrade && (
-                                  <p className="text-sm font-medium text-green-600 mb-2">
-                                    Grade: {assignment.submission.finalGrade}%
+                            {moduleAssignments.completedAssignments.map((assignment) => {
+                              // Check if this assignment has AI-generated progress
+                              const aiGenerated = progress?.assessments?.find(a => 
+                                a.assessmentId === assignment.id && a.aiGenerated === true
+                              );
+                              
+                              return (
+                                <div key={assignment.id} className="glass-effect p-4 rounded-lg border-l-4 border-green-500 relative">
+                                  {/* AI Generated Badge */}
+                                  {aiGenerated && (
+                                    <div className="absolute top-2 right-2">
+                                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-500 text-white text-xs rounded-full font-medium">
+                                        🤖 AI Progress
+                                      </span>
+                                    </div>
+                                  )}
+                                  
+                                  <h5 className="font-semibold text-gray-800 mb-2 pr-20">{assignment.title}</h5>
+                                  <p className="text-sm text-gray-600 mb-1">
+                                    Submitted: {new Date(assignment.submission.submittedAt.seconds * 1000).toLocaleDateString()}
                                   </p>
-                                )}
-                                <button 
-                                  onClick={() => window.location.href = `/dashboard/student/assignments/${assignment.moduleId}/${assignment.id}`}
-                                  className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm"
-                                >
-                                  View Submission
-                                </button>
-                              </div>
-                            ))}
+                                  
+                                  {/* Progress Display */}
+                                  <div className="mb-2">
+                                    {assignment.submission.finalGrade && (
+                                      <p className="text-sm font-medium text-green-600">
+                                        Progress: {assignment.submission.finalGrade}%
+                                        {aiGenerated && (
+                                          <span className="text-xs text-purple-600 ml-2">
+                                            (AI Assessment: {aiGenerated.progressPercentage || aiGenerated.score}%)
+                                          </span>
+                                        )}
+                                      </p>
+                                    )}
+                                    
+                                    {/* AI Progress Indicator */}
+                                    {aiGenerated && (
+                                      <div className="mt-2 p-2 bg-purple-50 border border-purple-200 rounded">
+                                        <p className="text-xs text-purple-700">
+                                          ✨ This assignment was automatically assessed by AI for progress tracking
+                                        </p>
+                                        {aiGenerated.feedback && (
+                                          <p className="text-xs text-gray-600 mt-1 truncate" title={aiGenerated.feedback}>
+                                            Feedback: {aiGenerated.feedback}
+                                          </p>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                  
+                                  <button 
+                                    onClick={() => window.location.href = `/dashboard/student/assignments/${assignment.moduleId}/${assignment.id}`}
+                                    className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm"
+                                  >
+                                    View Submission
+                                  </button>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
