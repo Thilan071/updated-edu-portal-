@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-export default function FloatingChatbot() {
+export default function FloatingChatbot({ dashboardType = "student" }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState("");
@@ -25,8 +25,12 @@ export default function FloatingChatbot() {
     setIsLoading(true);
 
     try {
+      // Add role-specific context to the prompt
+      const roleContext = getDashboardRoleContext();
+      const contextualPrompt = `${roleContext}\n\nUser question: ${inputMessage}`;
+
       const payload = {
-        contents: [{ role: "user", parts: [{ text: inputMessage }] }],
+        contents: [{ role: "user", parts: [{ text: contextualPrompt }] }],
       };
       const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
       if (!apiKey) {
@@ -62,9 +66,71 @@ export default function FloatingChatbot() {
     }
   };
 
+  const getDashboardRoleContext = () => {
+    switch (dashboardType) {
+      case "admin":
+        return `You are an AI assistant for EduBoost platform administrators. You help with:
+- User management and account administration
+- Module and assessment management
+- Platform analytics and reporting
+- System configuration and oversight
+- Participation tracking and monitoring
+- Notification management
+Please provide helpful, professional guidance for administrative tasks.`;
+      
+      case "educator":
+        return `You are an AI teaching assistant for EduBoost educators. You help with:
+- Student progress tracking and analysis
+- Assessment creation and grading
+- Module content management
+- Classroom participation monitoring
+- Educational best practices and teaching strategies
+- Student engagement and performance insights
+Please provide pedagogical support and educational guidance.`;
+      
+      case "student":
+      default:
+        return `You are an AI mentor for EduBoost students. You help with:
+- Academic planning and study strategies
+- Assignment and assessment guidance
+- Learning goals and progress tracking
+- Educational resources and study tips
+- Academic motivation and support
+- Course planning and module selection
+Please provide encouraging, helpful academic guidance.`;
+    }
+  };
+
   const handleKeyPress = (e) => {
     if (e.key === "Enter") sendMessage();
   };
+
+  // Dynamic content based on dashboard type
+  const getDashboardContent = () => {
+    switch (dashboardType) {
+      case "admin":
+        return {
+          title: "EduBoost Admin Assistant",
+          subtitle: "Hi! I'm your Admin AI Assistant",
+          welcomeMessage: "Hello Admin! How can I help you manage the platform today?"
+        };
+      case "educator":
+        return {
+          title: "EduBoost Educator Mentor",
+          subtitle: "Hi! I'm your Teaching Assistant",
+          welcomeMessage: "Hello Educator! How can I assist you with your teaching today?"
+        };
+      case "student":
+      default:
+        return {
+          title: "EduBoost AI Mentor",
+          subtitle: "Hi I'm EduBoost!!",
+          welcomeMessage: "Hi! How are you? How's your academic journey so far?"
+        };
+    }
+  };
+
+  const dashboardContent = getDashboardContent();
 
   const toggleChat = () => {
     setIsOpen(!isOpen);
@@ -73,7 +139,7 @@ export default function FloatingChatbot() {
       setMessages([
         {
           sender: "ai",
-          text: "Hi! How are you? How's your academic journey so far?"
+          text: dashboardContent.welcomeMessage
         }
       ]);
     }
@@ -191,17 +257,17 @@ export default function FloatingChatbot() {
                         </svg>
                       </button>
                       <h1 className="text-2xl font-extrabold text-gray-800 tracking-tight">
-                        EduBoost AI Mentor
+                        {dashboardContent.title}
                       </h1>
                       <p className="text-sm text-gray-500 mt-1">
-                        Hi I'm EduBoost!!
+                        {dashboardContent.subtitle}
                       </p>
                     </div>
 
                     <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
                       {messages.length === 0 ? (
                         <div className="flex items-center justify-center h-full text-gray-400 text-base italic">
-                          Hi! How are you? How's your academic journey so far?
+                          {dashboardContent.welcomeMessage}
                         </div>
                       ) : (
                         messages.map((msg, i) => (

@@ -213,7 +213,7 @@ export default function StudentDashboardLayout({ children }) {
         </main>
 
         {/* Floating Chatbot */}
-        <FloatingChatbot />
+        <FloatingChatbot dashboardType="student" />
       </div>
     </>
   );
