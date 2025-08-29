@@ -20,19 +20,6 @@ export default function MyAssessments() {
     if (session?.user?.uid && status !== 'loading') {
       fetchData();
     }
-    
-    // Add event listener to refresh data when returning to the page
-    const handleFocus = () => {
-      if (session?.user?.uid) {
-        refreshData();
-      }
-    };
-    
-    window.addEventListener('focus', handleFocus);
-    
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-    };
   }, [session, status]);
 
   const fetchData = async () => {
@@ -505,16 +492,6 @@ export default function MyAssessments() {
     
     const assessmentProgress = progress.assessments.find(p => p.assessmentId === assessment.id);
     return assessmentProgress;
-  };
-
-  // New helper function to refresh data after changes
-  const refreshData = async () => {
-    try {
-      // Refresh all data and recalculate progress
-      await fetchData();
-    } catch (err) {
-      console.error('Error refreshing data:', err);
-    }
   };
 
   // New helper function to toggle module expansion
