@@ -286,6 +286,29 @@ export default function AdminParticipationPage() {
           border: 1px solid rgba(255, 255, 255, 0.1);
           box-shadow: 0 10px 40px 0 rgba(0, 0, 0, 0.4);
         }
+
+        /* Custom dropdown styling */
+        select {
+          background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
+          background-position: right 0.5rem center;
+          background-repeat: no-repeat;
+          background-size: 1.5em 1.5em;
+          padding-right: 2.5rem;
+        }
+        
+        select option {
+          background-color: #1f2937 !important;
+          color: #ffffff !important;
+          padding: 0.5rem;
+        }
+        
+        select option:hover {
+          background-color: #374151 !important;
+        }
+        
+        select option:checked {
+          background-color: #3b82f6 !important;
+        }
       `}</style>
       <div className="main-font text-white">
         <header
@@ -339,11 +362,14 @@ export default function AdminParticipationPage() {
                   <select
                     value={selectedModule}
                     onChange={(e) => handleModuleChange(e.target.value)}
-                    className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-400"
+                    className="bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-400 focus:bg-gray-700"
+                    style={{
+                      colorScheme: 'dark'
+                    }}
                   >
-                    <option value="all">All Modules</option>
+                    <option value="all" className="bg-gray-800 text-white">All Modules</option>
                     {modules.map(module => (
-                      <option key={module.id} value={module.id}>{module.title || module.name}</option>
+                      <option key={module.id} value={module.id} className="bg-gray-800 text-white">{module.title || module.name}</option>
                     ))}
                   </select>
                 </div>
@@ -352,12 +378,15 @@ export default function AdminParticipationPage() {
                   <select
                     value={selectedTimeRange}
                     onChange={(e) => handleTimeRangeChange(e.target.value)}
-                    className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-400"
+                    className="bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-400 focus:bg-gray-700"
+                    style={{
+                      colorScheme: 'dark'
+                    }}
                   >
-                    <option value="7">Last 7 days</option>
-                    <option value="30">Last 30 days</option>
-                    <option value="90">Last 90 days</option>
-                    <option value="365">Last year</option>
+                    <option value="7" className="bg-gray-800 text-white">Last 7 days</option>
+                    <option value="30" className="bg-gray-800 text-white">Last 30 days</option>
+                    <option value="90" className="bg-gray-800 text-white">Last 90 days</option>
+                    <option value="365" className="bg-gray-800 text-white">Last year</option>
                   </select>
                 </div>
                 <div className="flex items-center gap-2">
