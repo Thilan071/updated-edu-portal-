@@ -4,7 +4,7 @@ import { useSession } from 'next-auth/react';
 import { useParams, useRouter } from 'next/navigation';
 import { 
   ArrowLeft, User, Mail, Phone, Calendar, BookOpen, Award, 
-  TrendingUp, Clock, CheckCircle, AlertCircle, Edit3, Save, X 
+  TrendingUp, Clock, CheckCircle, AlertCircle, Edit3, Save, X, MessageSquare 
 } from 'lucide-react';
 import apiClient from '@/lib/apiClient';
 
@@ -32,6 +32,11 @@ function ModuleCard({ module, student, onUpdateMarks }) {
   const [isEditing, setIsEditing] = useState(false);
   const [marks, setMarks] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const [isRepeatModule, setIsRepeatModule] = useState(false);
+  const [savingFeedback, setSavingFeedback] = useState(false);
+  const [existingFeedback, setExistingFeedback] = useState(null);
   
   // Get current progress for this module
   const moduleProgress = student.moduleProgress?.find(p => p.moduleId === module.id);
@@ -41,7 +46,30 @@ function ModuleCard({ module, student, onUpdateMarks }) {
   
   useEffect(() => {
     setMarks(currentMarks.toString());
+    // Load existing feedback when component mounts
+    loadExistingFeedback();
   }, [currentMarks]);
+
+  const loadExistingFeedback = async () => {
+    try {
+      const response = await fetch(`/api/educator/module-feedback?studentId=${student.id}&moduleId=${module.id}`, {
+        credentials: 'include'
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.feedbacks.length > 0) {
+          const feedback = data.feedbacks[0]; // Get most recent feedback
+          setExistingFeedback(feedback);
+          setFeedback(feedback.feedback);
+          setIsRepeatModule(feedback.isRepeatModule);
+        }
+      } else {
+        console.warn('Failed to load existing feedback:', response.status);
+      }
+    } catch (error) {
+      console.error('Error loading feedback:', error);
+    }
+  };
 
   const handleSave = async () => {
     if (!marks || isNaN(marks) || marks < 0 || marks > 100) {
@@ -63,6 +91,54 @@ function ModuleCard({ module, student, onUpdateMarks }) {
   const handleCancel = () => {
     setMarks(currentMarks.toString());
     setIsEditing(false);
+  };
+
+  const handleSaveFeedback = async () => {
+    if (!feedback.trim()) {
+      alert('Please enter feedback before saving');
+      return;
+    }
+
+    setSavingFeedback(true);
+    try {
+      const response = await fetch('/api/educator/module-feedback', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          studentId: student.id,
+          moduleId: module.id,
+          feedback: feedback.trim(),
+          isRepeatModule: isRepeatModule
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setExistingFeedback(result.feedback);
+        setShowFeedback(false);
+        
+        // Show success message with better UX
+        const action = existingFeedback ? 'updated' : 'saved';
+        alert(`✅ Feedback ${action} successfully!${isRepeatModule ? '\n📝 This will appear in the student\'s repeat preparation plan.' : ''}`);
+      } else {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to save feedback');
+      }
+    } catch (error) {
+      console.error('Error saving feedback:', error);
+      alert(`❌ Failed to save feedback: ${error.message}`);
+    } finally {
+      setSavingFeedback(false);
+    }
+  };
+
+  const handleCancelFeedback = () => {
+    setFeedback(existingFeedback?.feedback || '');
+    setIsRepeatModule(existingFeedback?.isRepeatModule || false);
+    setShowFeedback(false);
   };
 
   return (
@@ -161,7 +237,106 @@ function ModuleCard({ module, student, onUpdateMarks }) {
             {status.replace('_', ' ')}
           </span>
         </div>
+        
+        {/* Feedback Section */}
+        <div className="mt-4 pt-3 border-t border-white/10">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center space-x-2">
+              <MessageSquare className="w-4 h-4 text-blue-400" />
+              <span className="text-gray-300 text-sm">Module Feedback</span>
+              {existingFeedback && (
+                <span className="text-xs text-green-400">
+                  ({existingFeedback.isRepeatModule ? 'Repeat Module' : 'Regular'})
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => setShowFeedback(true)}
+              className="px-3 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-xs rounded transition-colors"
+            >
+              {existingFeedback ? 'Edit Feedback' : 'Add Feedback'}
+            </button>
+          </div>
+          {existingFeedback && (
+            <div className="mt-2 p-2 bg-white/5 rounded text-xs text-gray-300">
+              {existingFeedback.feedback.length > 100 
+                ? `${existingFeedback.feedback.substring(0, 100)}...` 
+                : existingFeedback.feedback}
+            </div>
+          )}
+        </div>
       </div>
+      
+      {/* Feedback Modal */}
+      {showFeedback && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-700">
+              <div className="flex justify-between items-center">
+                <h3 className="text-xl font-semibold text-white">
+                  Module Feedback: {module.title || module.name}
+                </h3>
+                <button
+                  onClick={handleCancelFeedback}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Feedback for {student.firstName} {student.lastName}
+                </label>
+                <textarea
+                  value={feedback}
+                  onChange={(e) => setFeedback(e.target.value)}
+                  className="w-full h-32 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Enter your feedback for this module..."
+                />
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="isRepeatModule"
+                  checked={isRepeatModule}
+                  onChange={(e) => setIsRepeatModule(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+                />
+                <label htmlFor="isRepeatModule" className="text-sm text-gray-300">
+                  This is a repeat module (will show in student's repeat preparation plan)
+                </label>
+              </div>
+              
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  onClick={handleCancelFeedback}
+                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveFeedback}
+                  disabled={savingFeedback || !feedback.trim()}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center space-x-2"
+                >
+                  {savingFeedback ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <span>Save Feedback</span>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

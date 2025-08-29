@@ -16,14 +16,48 @@ export default function RepeatPreparation() {
   const [goalProgress, setGoalProgress] = useState({});
   const [moduleProgressData, setModuleProgressData] = useState({});
   const [savingGoals, setSavingGoals] = useState(false);
+  const [moduleFeedback, setModuleFeedback] = useState({});
 
   // Debug session state
   useEffect(() => {
     // Session is ready, component can proceed
     if (session?.user?.id) {
       loadUserProgress();
+      loadModuleFeedback();
     }
   }, [session, status]);
+
+  // Load module feedback for repeat modules
+  const loadModuleFeedback = async () => {
+    if (!session?.user?.id) return;
+    
+    try {
+      const response = await fetch(`/api/educator/module-feedback?studentId=${session.user.id}&onlyRepeatModules=true`, {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Feedback API Response:', data); // Debug log
+        if (data.success) {
+          // Convert feedback array to object indexed by module title
+          const feedbackMap = {};
+          data.feedbacks.forEach(feedback => {
+            console.log('Processing feedback:', feedback); // Debug log
+            if (feedback.moduleTitle) {
+              feedbackMap[feedback.moduleTitle] = feedback;
+            }
+          });
+          console.log('Final feedback map:', feedbackMap); // Debug log
+          setModuleFeedback(feedbackMap);
+        }
+      } else {
+        console.error('Feedback API error:', response.status, response.statusText);
+      }
+    } catch (error) {
+      console.error('Error loading module feedback:', error);
+    }
+  };
 
   // Load user progress data from Firebase
   const loadUserProgress = async () => {
@@ -56,42 +90,63 @@ export default function RepeatPreparation() {
   useEffect(() => {
     // Trigger fade-in animation on mount
     setIsMounted(true);
-    fetchRepeatModules();
   }, []);
 
+  useEffect(() => {
+    // Fetch repeat modules when session is available
+    if (session?.user?.id) {
+      console.log('Session available, fetching repeat modules...');
+      fetchRepeatModules();
+    }
+  }, [session?.user?.id]);
+
   const fetchRepeatModules = async () => {
-    // Dummy data — connect to backend later
-    const data = [
-      {
-        moduleName: "Database Management",
-        currentAttempt: 2,
-        lastScore: 48,
-        plan: "Focus on Normalization & SQL Joins. Complete at least 5 past papers. Attend revision labs.",
-        progress: 60
-      },
-      {
-        moduleName: "Programming Fundamentals",
-        currentAttempt: 2,
-        lastScore: 52,
-        plan: "Revise basic programming concepts. Practice loops, functions, and data structures.",
-        progress: 30
-      },
-      {
-        moduleName: "Operating System",
-        currentAttempt: 2,
-        lastScore: 45,
-        plan: "Study process management and memory allocation. Complete lab exercises on scheduling algorithms.",
-        progress: 40
-      },
-      {
-        moduleName: "Introduction to Machine Learning",
-        currentAttempt: 2,
-        lastScore: 38,
-        plan: "Deep dive into machine learning algorithms. Complete mini-projects on classification and regression.",
-        progress: 25
+    if (!session?.user?.id) {
+      console.log('No user session for fetching repeat modules');
+      return;
+    }
+
+    try {
+      console.log('Fetching repeat modules for student:', session.user.id);
+      
+      const response = await fetch(`/api/student/repeat-modules?studentId=${session.user.id}`, {
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Repeat modules API response:', data);
+        
+        if (data.success && data.repeatModules) {
+          // Transform the data to match the expected format
+          const formattedModules = data.repeatModules.map(module => ({
+            moduleId: module.moduleId,
+            moduleName: module.moduleName,
+            currentAttempt: module.currentAttempt,
+            lastScore: module.lastScore,
+            plan: `Focus on improving performance in ${module.moduleName}. Review key concepts and practice exercises to achieve a passing grade.`,
+            progress: module.progress || 0
+          }));
+          
+          console.log('Setting repeat modules:', formattedModules);
+          setRepeatModules(formattedModules);
+        } else {
+          console.log('No repeat modules found or API returned success: false');
+          setRepeatModules([]); // Set empty array if no repeat modules
+        }
+      } else {
+        console.error('Failed to fetch repeat modules:', response.status, response.statusText);
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
+        
+        // Fallback to empty array
+        setRepeatModules([]);
       }
-    ];
-    setRepeatModules(data);
+    } catch (error) {
+      console.error('Error fetching repeat modules:', error);
+      // Fallback to empty array
+      setRepeatModules([]);
+    }
   };
 
   const getProgressColor = (progress) => {
@@ -299,7 +354,17 @@ export default function RepeatPreparation() {
         <div className="w-full h-[2px] bg-blue-600 rounded-full mb-8 animated-divider"></div>
 
         <div className="space-y-6">
-          {repeatModules.map((mod, idx) => (
+          {repeatModules.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-gray-500 text-lg mb-4">
+                🎉 Great news! You don't have any modules that need repetition.
+              </div>
+              <div className="text-gray-400 text-sm">
+                Modules with scores below 50% will appear here for additional practice.
+              </div>
+            </div>
+          ) : (
+            repeatModules.map((mod, idx) => (
             <div
               key={idx}
               className={`glass-effect p-6 rounded-xl shadow-lg space-y-4
@@ -318,10 +383,30 @@ export default function RepeatPreparation() {
 
               <p className="text-gray-700">Last Score: <strong className="font-bold text-blue-700">{mod.lastScore}%</strong></p>
 
-              <div className="p-4 bg-blue-50 rounded-lg border border-blue-200 text-gray-800">
-                <h3 className="font-semibold mb-2 text-blue-700 text-lg">Preparation Plan:</h3>
-                <p>{mod.plan}</p>
-              </div>
+              {/* Preparation Plan - Show educator feedback if available, otherwise show default plan */}
+              {moduleFeedback[mod.moduleName] ? (
+                <div className="p-4 bg-amber-50 rounded-lg border border-amber-200 text-gray-800">
+                  <h3 className="font-semibold mb-2 text-amber-700 text-lg flex items-center">
+                    <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    </svg>
+                    Preparation Plan:
+                  </h3>
+                  <p className="leading-relaxed">{moduleFeedback[mod.moduleName].feedback}</p>
+                  <div className="mt-3 text-xs text-amber-600 border-t border-amber-200 pt-2">
+                    Personalized feedback from: {moduleFeedback[mod.moduleName].educatorName} • 
+                    {moduleFeedback[mod.moduleName].createdAt && moduleFeedback[mod.moduleName].createdAt.seconds 
+                      ? new Date(moduleFeedback[mod.moduleName].createdAt.seconds * 1000).toLocaleDateString()
+                      : new Date(moduleFeedback[mod.moduleName].createdAt).toLocaleDateString()
+                    }
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 bg-blue-50 rounded-lg border border-blue-200 text-gray-800">
+                  <h3 className="font-semibold mb-2 text-blue-700 text-lg">Preparation Plan:</h3>
+                  <p>{mod.plan}</p>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <div className="flex justify-between items-center text-gray-700">
@@ -346,7 +431,8 @@ export default function RepeatPreparation() {
                 )}
               </div>
             </div>
-          ))}
+          ))
+          )}
         </div>
 
         {/* AI Goals Modal */}
