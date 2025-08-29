@@ -49,26 +49,29 @@ export async function verifyAuthToken(request) {
  * Middleware function to check authentication for API routes
  * @param {Request} request - The API request object
  * @param {Array} allowedRoles - Array of roles allowed to access this endpoint
- * @returns {Object} - Object containing error (NextResponse) and user data
+ * @returns {Object} - Object containing { success, error, user } format
  */
 export async function authenticateAPIRequest(request, allowedRoles = []) {
   const user = await verifyAuthToken(request);
   
   if (!user) {
     return {
-      error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
+      success: false,
+      error: 'Unauthorized',
       user: null
     };
   }
   
   if (allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
     return {
-      error: NextResponse.json({ error: 'Forbidden - Insufficient permissions' }, { status: 403 }),
+      success: false,
+      error: 'Forbidden - Insufficient permissions',
       user: null
     };
   }
   
   return {
+    success: true,
     error: null,
     user
   };

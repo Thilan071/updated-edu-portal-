@@ -5,10 +5,11 @@ import ModuleService from '@/lib/moduleService';
 // GET /api/student/active-assignments - Get active assignments for the current student
 export async function GET(request) {
   try {
-    const { success, error, user } = await authenticateAPIRequest(request, ['student']);
-    if (!success) {
-      return NextResponse.json({ error: error || 'Authentication failed' }, { status: 401 });
+    const authResult = await authenticateAPIRequest(request, ['student']);
+    if (!authResult.success) {
+      return NextResponse.json({ error: authResult.error }, { status: 401 });
     }
+    const user = authResult.user;
 
     // Validate user ID
     const studentId = user.uid || user.id;

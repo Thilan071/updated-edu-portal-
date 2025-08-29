@@ -407,6 +407,81 @@ export default function AssignmentDetail() {
           </div>
         </div>
 
+        {/* Assessment PDF Display */}
+        {assignment.pdfInfo && assignment.pdfInfo.filePath && (
+          <div className="glass-effect p-6 rounded-xl mb-8">
+            <h2 className="text-xl font-bold text-white mb-4">📄 Assessment Materials</h2>
+            <div className="bg-slate-800/50 border border-slate-600 rounded-lg p-4">
+              <div className="flex items-center gap-3 mb-4">
+                <svg className="w-6 h-6 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+                </svg>
+                <div>
+                  <h3 className="text-white font-semibold">{assignment.pdfInfo.fileName}</h3>
+                  <p className="text-gray-400 text-sm">
+                    Uploaded: {new Date(assignment.pdfInfo.uploadedAt).toLocaleDateString()}
+                    {assignment.pdfInfo.fileSize && (
+                      <span className="ml-2">• Size: {(assignment.pdfInfo.fileSize / 1024 / 1024).toFixed(2)} MB</span>
+                    )}
+                    <span className="ml-2">• Stored securely in Firebase</span>
+                  </p>
+                </div>
+              </div>
+              
+              <div className="space-y-3">
+                <div className="flex gap-3">
+                  <a
+                    href={assignment.pdfInfo.filePath}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    View PDF
+                  </a>
+                  <a
+                    href={assignment.pdfInfo.filePath}
+                    download={assignment.pdfInfo.fileName}
+                    className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Download PDF
+                  </a>
+                </div>
+                
+                {/* PDF Preview Frame */}
+                <div className="border border-slate-600 rounded-lg overflow-hidden">
+                  <iframe
+                    src={assignment.pdfInfo.filePath}
+                    className="w-full h-96"
+                    title="Assessment PDF Preview"
+                    style={{
+                      border: 'none',
+                      background: '#1e293b'
+                    }}
+                  >
+                    <p className="text-gray-400 p-4">
+                      Your browser does not support PDF preview. 
+                      <a href={assignment.pdfInfo.filePath} target="_blank" rel="noopener noreferrer" className="text-blue-400 underline">
+                        Click here to view the PDF
+                      </a>
+                    </p>
+                  </iframe>
+                </div>
+                
+                <div className="text-xs text-gray-500 mt-2">
+                  🔒 This document is securely stored in Firebase Storage and accessible only to enrolled students.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
 
 
         {/* Project Assignment Submission Section */}

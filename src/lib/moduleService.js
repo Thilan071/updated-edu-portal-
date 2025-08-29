@@ -13,15 +13,15 @@ export class ModuleService {
   static async createModule(moduleData) {
     try {
       const moduleRef = adminDb.collection(MODULES_COLLECTION).doc();
-      const module = {
+      const moduleRecord = {
         ...moduleData,
         id: moduleRef.id,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
       
-      await moduleRef.set(module);
-      return module;
+      await moduleRef.set(moduleRecord);
+      return moduleRecord;
     } catch (error) {
       console.error('Error creating module:', error);
       throw error;
@@ -526,7 +526,7 @@ export class ModuleService {
     }
   }
 
-  static async activateAssignment(moduleId, assignmentId, dueDate, educatorId) {
+  static async activateAssignment(moduleId, assignmentId, dueDate, educatorId, pdfInfo = null) {
     try {
       const assignmentRef = adminDb.collection(MODULES_COLLECTION)
         .doc(moduleId)
@@ -543,6 +543,11 @@ export class ModuleService {
       // Only add activatedBy if educatorId is provided
       if (educatorId) {
         updateData.activatedBy = educatorId;
+      }
+      
+      // Add PDF information if provided
+      if (pdfInfo) {
+        updateData.pdfInfo = pdfInfo;
       }
       
       await assignmentRef.update(updateData);

@@ -143,7 +143,7 @@ function ModuleAssignmentManager({ isMounted }) {
             {selectedModule ? (
               <>
                 <h3 className="text-lg font-semibold text-white mb-4">
-                  Assignments for {selectedModule.title}
+                  Assessments for {selectedModule.title}
                 </h3>
                 <div className="space-y-4">
                   {assignmentTemplates.map((assignment) => (
@@ -265,6 +265,7 @@ function ModuleAssignmentManager({ isMounted }) {
 // 2) Activate Assignment Modal
 function ActivateAssignmentModal({ assignment, onClose, onSuccess }) {
   const [dueDate, setDueDate] = useState('');
+  const [selectedFile, setSelectedFile] = useState(null);
   const [loading, setLoading] = useState(false);
 
   // Set minimum date to today
@@ -275,13 +276,53 @@ function ActivateAssignmentModal({ assignment, onClose, onSuccess }) {
     setDueDate(tomorrow.toISOString().split('T')[0]);
   }, []);
 
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.includes('pdf')) {
+        alert('Please select a PDF file only.');
+        e.target.value = '';
+        return;
+      }
+      // Validate file size (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        alert('File size must be less than 10MB.');
+        e.target.value = '';
+        return;
+      }
+      setSelectedFile(file);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!dueDate) return;
 
     try {
       setLoading(true);
-      await apiClient.assignmentTemplateAPI.activate(assignment.moduleId, assignment.id, dueDate);
+      
+      // Prepare form data if file is selected
+      if (selectedFile) {
+        const formData = new FormData();
+        formData.append('dueDate', dueDate);
+        formData.append('pdfFile', selectedFile);
+        
+        // Use fetch directly for file upload
+        const response = await fetch(`/api/modules/${assignment.moduleId}/assignment-templates/${assignment.id}/activate`, {
+          method: 'POST',
+          body: formData,
+          credentials: 'include'
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to activate assignment');
+        }
+      } else {
+        // Regular activation without file
+        await apiClient.assignmentTemplateAPI.activate(assignment.moduleId, assignment.id, dueDate);
+      }
+      
       onSuccess();
     } catch (err) {
       console.error('Error activating assignment:', err);
@@ -294,7 +335,7 @@ function ActivateAssignmentModal({ assignment, onClose, onSuccess }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-gray-800 rounded-2xl p-6 w-full max-w-md mx-4">
-        <h3 className="text-xl font-bold text-white mb-4">Activate Assignment</h3>
+        <h3 className="text-xl font-bold text-white mb-4">Activate Assessment</h3>
         
         <div className="mb-4">
           <h4 className="font-semibold text-white">{assignment.title}</h4>
@@ -321,6 +362,32 @@ function ActivateAssignmentModal({ assignment, onClose, onSuccess }) {
               className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               required
             />
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Assessment PDF (Optional)
+            </label>
+            <div className="relative">
+              <input
+                type="file"
+                accept=".pdf"
+                onChange={handleFileChange}
+                className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+              />
+              {selectedFile && (
+                <div className="mt-2 p-2 bg-gray-700/30 rounded-lg">
+                  <div className="flex items-center gap-2 text-sm text-gray-300">
+                    <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+                    </svg>
+                    <span>{selectedFile.name}</span>
+                    <span className="text-xs text-gray-500">({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)</span>
+                  </div>
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Upload a PDF file for students to view when starting the assessment (Max: 10MB)</p>
           </div>
 
           <div className="flex gap-3">
