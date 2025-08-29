@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import FloatingChatbot from "@/components/FloatingChatbot";
 
 const NavIcon = ({ children }) => (
@@ -12,6 +14,7 @@ const NavIcon = ({ children }) => (
 export default function StudentDashboardLayout({ children }) {
   const [isMounted, setIsMounted] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     setIsMounted(true);
@@ -176,16 +179,27 @@ export default function StudentDashboardLayout({ children }) {
                   </svg>
                 ),
               },
-            ].map((item) => (
-              <a
-                key={item.href}
-                href={item.href}
-                className="flex items-center p-3 rounded-xl transition-all duration-300 ease-in-out hover:bg-white/10 hover:shadow-xl transform nav-link-hover"
-              >
-                <NavIcon>{item.icon}</NavIcon>
-                <span>{item.label}</span>
-              </a>
-            ))}
+            ].map((item) => {
+              // Special handling for the Home route
+              const isActive = item.href === '/dashboard/student' 
+                ? pathname === '/dashboard/student'
+                : pathname === item.href || pathname.startsWith(item.href + '/');
+              
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`flex items-center p-3 rounded-xl transition-all duration-300 ease-in-out transform nav-link-hover ${
+                    isActive 
+                      ? 'bg-white/20 text-white font-semibold shadow-lg' 
+                      : 'hover:bg-white/10 hover:shadow-xl'
+                  }`}
+                >
+                  <NavIcon>{item.icon}</NavIcon>
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
           </nav>
 
           <div className="p-4 pt-0">
