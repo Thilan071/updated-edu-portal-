@@ -5,14 +5,21 @@ import { authenticateAPIRequest } from '@/lib/authUtils';
 // GET /api/participation - Get participation data with filtering options
 export async function GET(request) {
   try {
+    console.log('🔍 Participation API: Starting authentication check...');
     const authResult = await authenticateAPIRequest(request, ['admin', 'educator', 'student']);
+    
+    console.log('🔍 Auth result:', { success: authResult.success, error: authResult.error, userRole: authResult.user?.role });
+    
     if (!authResult.success) {
+      console.log('❌ Authentication failed:', authResult.error);
       return NextResponse.json(
         { success: false, error: authResult.error },
         { status: authResult.error === 'Unauthorized' ? 401 : 403 }
       );
     }
     const user = authResult.user;
+    
+    console.log('✅ User authenticated:', { id: user.id, role: user.role, email: user.email });
 
     const { searchParams } = new URL(request.url);
     const moduleId = searchParams.get('moduleId');

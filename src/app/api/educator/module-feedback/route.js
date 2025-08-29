@@ -2,11 +2,16 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { authenticateAPIRequest } from '@/lib/authUtils';
 
-// POST /api/educator/module-feedback - Create or update module feedback
+// POST /api/educator/module-feedback - Create or update module feedback in student_progress
 export async function POST(request) {
   try {
-    const { error, user } = await authenticateAPIRequest(request, ['educator', 'admin']);
-    if (error) return error;
+    const authResult = await authenticateAPIRequest(request, ['educator', 'admin']);
+    if (!authResult.success) {
+      return NextResponse.json({ 
+        error: authResult.error 
+      }, { status: authResult.error === 'Unauthorized' ? 401 : 403 });
+    }
+    const user = authResult.user;
 
     const { studentId, moduleId, feedback, isRepeatModule } = await request.json();
     
@@ -29,48 +34,70 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Student not found' }, { status: 400 });
     }
 
-    // Check if feedback already exists
-    const existingFeedbackQuery = await adminDb.collection('module_feedback')
+    // Check if student progress record exists for this module
+    const existingProgressQuery = await adminDb.collection('student_progress')
       .where('studentId', '==', studentId)
       .where('moduleId', '==', moduleId)
-      .where('educatorId', '==', user.uid)
       .limit(1)
       .get();
 
     const feedbackData = {
-      studentId: studentId,
-      moduleId: moduleId,
-      educatorId: user.uid,
-      educatorName: `${user.firstName || 'Unknown'} ${user.lastName || 'User'}`,
-      feedback: feedback.trim(),
+      educatorFeedback: feedback.trim(),
       isRepeatModule: Boolean(isRepeatModule),
-      createdAt: new Date(),
-      updatedAt: new Date()
+      feedbackEducatorId: user.uid,
+      feedbackEducatorName: `${user.firstName || 'Unknown'} ${user.lastName || 'User'}`,
+      feedbackUpdatedAt: new Date()
     };
 
-    let feedbackRef;
+    let progressRef;
+    let updatedProgress;
     
-    if (!existingFeedbackQuery.empty) {
-      // Update existing feedback
-      const existingDoc = existingFeedbackQuery.docs[0];
-      feedbackRef = existingDoc.ref;
-      delete feedbackData.createdAt; // Don't update creation time
-      await feedbackRef.update(feedbackData);
+    if (!existingProgressQuery.empty) {
+      // Update existing progress record with feedback
+      const existingDoc = existingProgressQuery.docs[0];
+      progressRef = existingDoc.ref;
+      await progressRef.update({
+        ...feedbackData,
+        updatedAt: new Date()
+      });
+      
+      // Get the updated record
+      const updatedDoc = await progressRef.get();
+      updatedProgress = { id: updatedDoc.id, ...updatedDoc.data() };
     } else {
-      // Create new feedback record
-      feedbackRef = adminDb.collection('module_feedback').doc();
-      feedbackData.id = feedbackRef.id;
-      await feedbackRef.set(feedbackData);
+      // Create new progress record with feedback (and default values)
+      progressRef = adminDb.collection('student_progress').doc();
+      const progressData = {
+        id: progressRef.id,
+        studentId: studentId,
+        moduleId: moduleId,
+        marks: 0, // Default mark - can be updated later
+        score: 0, // Default score - can be updated later
+        status: 'not_started',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        ...feedbackData,
+        feedbackCreatedAt: new Date()
+      };
+      
+      await progressRef.set(progressData);
+      updatedProgress = { id: progressRef.id, ...progressData };
     }
-
-    // Get the updated feedback record
-    const updatedDoc = await feedbackRef.get();
-    const updatedFeedback = { id: updatedDoc.id, ...updatedDoc.data() };
 
     return NextResponse.json({ 
       success: true,
-      feedback: updatedFeedback,
-      message: 'Module feedback saved successfully'
+      feedback: {
+        id: updatedProgress.id,
+        studentId: updatedProgress.studentId,
+        moduleId: updatedProgress.moduleId,
+        feedback: updatedProgress.educatorFeedback,
+        isRepeatModule: updatedProgress.isRepeatModule,
+        educatorId: updatedProgress.feedbackEducatorId,
+        educatorName: updatedProgress.feedbackEducatorName,
+        createdAt: updatedProgress.feedbackCreatedAt || updatedProgress.createdAt,
+        updatedAt: updatedProgress.feedbackUpdatedAt
+      },
+      message: 'Module feedback saved successfully in student progress'
     }, { status: 200 });
 
   } catch (error) {
@@ -82,11 +109,16 @@ export async function POST(request) {
   }
 }
 
-// GET /api/educator/module-feedback - Get module feedback for student/module
+// GET /api/educator/module-feedback - Get module feedback from student_progress collection
 export async function GET(request) {
   try {
-    const { error, user } = await authenticateAPIRequest(request, ['educator', 'admin', 'student']);
-    if (error) return error;
+    const authResult = await authenticateAPIRequest(request, ['educator', 'admin', 'student']);
+    if (!authResult.success) {
+      return NextResponse.json({ 
+        error: authResult.error 
+      }, { status: authResult.error === 'Unauthorized' ? 401 : 403 });
+    }
+    const user = authResult.user;
 
     const { searchParams } = new URL(request.url);
     const studentId = searchParams.get('studentId');
@@ -100,7 +132,7 @@ export async function GET(request) {
       }, { status: 403 });
     }
 
-    let query = adminDb.collection('module_feedback');
+    let query = adminDb.collection('student_progress');
 
     // Apply filters - use simple queries to avoid index requirements
     if (studentId && moduleId) {
@@ -112,37 +144,50 @@ export async function GET(request) {
       query = query.where('moduleId', '==', moduleId);
     }
 
-    // For educators, only show their own feedback unless they're admin
-    if (user.role === 'educator') {
-      // We'll filter this after getting the results to avoid complex compound queries
-    }
-
     let snapshot;
     try {
       // Get results without ordering to avoid index requirements
       snapshot = await query.get();
     } catch (indexError) {
-      console.error('Error fetching feedback:', indexError);
-      return Response.json({ success: false, error: 'Failed to fetch feedback' }, { status: 500 });
+      console.error('Error fetching student progress:', indexError);
+      return NextResponse.json({ success: false, error: 'Failed to fetch feedback' }, { status: 500 });
     }
     
     const feedbacks = [];
     for (const doc of snapshot.docs) {
-      const feedbackData = { id: doc.id, ...doc.data() };
+      const progressData = { id: doc.id, ...doc.data() };
       
-      // Filter by educator if needed (post-query filtering)
-      if (user.role === 'educator' && feedbackData.educatorId !== user.uid) {
+      // Only include records that have feedback
+      if (!progressData.educatorFeedback) {
+        continue;
+      }
+      
+      // Filter by educator if needed (only show feedback from current educator unless admin)
+      if (user.role === 'educator' && progressData.feedbackEducatorId !== user.uid) {
         continue;
       }
       
       // Filter by repeat modules if requested
-      if (onlyRepeatModules && !feedbackData.isRepeatModule) {
+      if (onlyRepeatModules && !progressData.isRepeatModule) {
         continue;
       }
       
+      // Transform to feedback format
+      const feedbackData = {
+        id: progressData.id,
+        studentId: progressData.studentId,
+        moduleId: progressData.moduleId,
+        feedback: progressData.educatorFeedback,
+        isRepeatModule: progressData.isRepeatModule || false,
+        educatorId: progressData.feedbackEducatorId,
+        educatorName: progressData.feedbackEducatorName,
+        createdAt: progressData.feedbackCreatedAt || progressData.createdAt,
+        updatedAt: progressData.feedbackUpdatedAt || progressData.updatedAt
+      };
+      
       // Get module details
       try {
-        const moduleDoc = await adminDb.collection('modules').doc(feedbackData.moduleId).get();
+        const moduleDoc = await adminDb.collection('modules').doc(progressData.moduleId).get();
         if (moduleDoc.exists) {
           feedbackData.moduleTitle = moduleDoc.data().title || moduleDoc.data().name;
         }
@@ -153,7 +198,7 @@ export async function GET(request) {
       // Get student details (only if not the student themselves)
       if (user.role !== 'student') {
         try {
-          const studentDoc = await adminDb.collection('users').doc(feedbackData.studentId).get();
+          const studentDoc = await adminDb.collection('users').doc(progressData.studentId).get();
           if (studentDoc.exists) {
             const studentData = studentDoc.data();
             feedbackData.studentName = `${studentData.firstName || ''} ${studentData.lastName || ''}`.trim();
