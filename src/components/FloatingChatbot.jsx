@@ -150,7 +150,7 @@ Please provide encouraging, helpful academic guidance.`;
       {/* Floating Chat Button */}
       <motion.button
         onClick={toggleChat}
-        className="fixed bottom-6 right-6 w-16 h-16 sm:w-20 sm:h-20 bg-white hover:bg-gray-50 text-gray-700 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 z-50 flex items-center justify-center overflow-hidden border-2 border-gray-200"
+        className="fixed bottom-6 right-6 w-20 h-20 sm:w-24 sm:h-24 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 z-50 flex items-center justify-center overflow-hidden bg-transparent"
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.95 }}
         initial={{ opacity: 0, y: 20 }}
@@ -159,31 +159,35 @@ Please provide encouraging, helpful academic guidance.`;
       >
         <AnimatePresence mode="wait">
           {isOpen ? (
-            <motion.svg
+            <motion.div
               key="close"
-              xmlns="http://www.w3.org/2000/svg"
-              width="28"
-              height="28"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              className="w-20 h-20 sm:w-24 sm:h-24 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 rounded-full flex items-center justify-center"
               initial={{ rotate: 180, opacity: 0 }}
               animate={{ rotate: 0, opacity: 1 }}
               exit={{ rotate: 180, opacity: 0 }}
               transition={{ duration: 0.2 }}
             >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </motion.svg>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="32"
+                height="32"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="white"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </motion.div>
           ) : (
             <motion.img
               key="chatbot"
               src="/uploads/chatbot_icon.png"
               alt="Chatbot"
-              className="w-12 h-12 sm:w-16 sm:h-16 object-contain"
+              className="w-20 h-20 sm:w-24 sm:h-24 object-contain"
               initial={{ rotate: -180, opacity: 0, scale: 0.8 }}
               animate={{ rotate: 0, opacity: 1, scale: 1 }}
               exit={{ rotate: -180, opacity: 0, scale: 0.8 }}
