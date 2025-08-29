@@ -536,7 +536,7 @@ export default function MyModules() {
               )}
               
               <div className="flex justify-between text-sm text-gray-600 pt-2 border-t border-gray-200">
-                <span>Submissions: <strong className="text-blue-700">{mod.attempts}</strong></span>
+                <span>Attempts: <strong className="text-blue-700">{mod.attempts}</strong></span>
                 {mod.dueDate && (
                   <span>Due: <strong>{new Date(mod.dueDate).toLocaleDateString()}</strong></span>
                 )}

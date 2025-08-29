@@ -32,7 +32,8 @@ export default function RepeatPreparation() {
     if (!session?.user?.id) return;
     
     try {
-      const response = await fetch(`/api/educator/module-feedback?studentId=${session.user.id}&onlyRepeatModules=true`, {
+      // Fetch all feedback for this student (without onlyRepeatModules filter)
+      const response = await fetch(`/api/educator/module-feedback?studentId=${session.user.id}`, {
         credentials: 'include'
       });
       
@@ -40,10 +41,14 @@ export default function RepeatPreparation() {
         const data = await response.json();
         console.log('Feedback API Response:', data); // Debug log
         if (data.success) {
-          // Convert feedback array to object indexed by module title
+          // Convert feedback array to object indexed by moduleId AND module title for flexibility
           const feedbackMap = {};
           data.feedbacks.forEach(feedback => {
             console.log('Processing feedback:', feedback); // Debug log
+            // Index by both moduleId and moduleTitle for better matching
+            if (feedback.moduleId) {
+              feedbackMap[feedback.moduleId] = feedback;
+            }
             if (feedback.moduleTitle) {
               feedbackMap[feedback.moduleTitle] = feedback;
             }
@@ -383,28 +388,30 @@ export default function RepeatPreparation() {
 
               <p className="text-gray-700">Last Score: <strong className="font-bold text-blue-700">{mod.lastScore}%</strong></p>
 
-              {/* Preparation Plan - Show educator feedback if available, otherwise show default plan */}
-              {moduleFeedback[mod.moduleName] ? (
+              {/* Educator Feedback Section - Show only educator feedback or awaiting message */}
+              {(moduleFeedback[mod.moduleId] || moduleFeedback[mod.moduleName]) ? (
                 <div className="p-4 bg-amber-50 rounded-lg border border-amber-200 text-gray-800">
                   <h3 className="font-semibold mb-2 text-amber-700 text-lg flex items-center">
                     <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                     </svg>
-                    Preparation Plan:
+                    Educator Feedback:
                   </h3>
-                  <p className="leading-relaxed">{moduleFeedback[mod.moduleName].feedback}</p>
-                  <div className="mt-3 text-xs text-amber-600 border-t border-amber-200 pt-2">
-                    Personalized feedback from: {moduleFeedback[mod.moduleName].educatorName} • 
-                    {moduleFeedback[mod.moduleName].createdAt && moduleFeedback[mod.moduleName].createdAt.seconds 
-                      ? new Date(moduleFeedback[mod.moduleName].createdAt.seconds * 1000).toLocaleDateString()
-                      : new Date(moduleFeedback[mod.moduleName].createdAt).toLocaleDateString()
-                    }
-                  </div>
+                  <p className="leading-relaxed">{(moduleFeedback[mod.moduleId] || moduleFeedback[mod.moduleName]).feedback}</p>
+                 
                 </div>
               ) : (
-                <div className="p-4 bg-blue-50 rounded-lg border border-blue-200 text-gray-800">
-                  <h3 className="font-semibold mb-2 text-blue-700 text-lg">Preparation Plan:</h3>
-                  <p>{mod.plan}</p>
+                <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 text-gray-600">
+                  <h3 className="font-semibold mb-2 text-gray-700 text-lg flex items-center">
+                    <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                    </svg>
+                    Educator Feedback:
+                  </h3>
+                  <p className="text-gray-500 italic">Awaiting Educator Feedback</p>
+                  <div className="mt-2 text-xs text-gray-400">
+                    Your educator will provide personalized feedback and guidance for this module.
+                  </div>
                 </div>
               )}
 

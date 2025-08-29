@@ -34,7 +34,7 @@ const GlobalStyles = () => (
 );
 
 const links = [
-  { name: 'Dashboard Overview', href: '/dashboard/admin',                      icon: <LayoutDashboard size={20} /> },
+  { name: 'Pending Approvals', href: '/dashboard/admin',                      icon: <LayoutDashboard size={20} /> },
   { name: 'User Management',    href: '/dashboard/admin/user-management',      icon: <UserRoundCog size={20} /> },
   { name: 'Module Management',  href: '/dashboard/admin/module-management',    icon: <BookOpen size={20} /> },
   { name: 'Assessment Management', href: '/dashboard/admin/assessment-management', icon: <Wrench size={20} /> },

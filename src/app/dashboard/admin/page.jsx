@@ -127,7 +127,7 @@ export default function AdminDashboard() {
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center space-x-4">
               <img src="/eduboost.png" alt="EduBoost Logo" className="h-12 w-12 rounded-full shadow-lg" />
-              <h1 className="text-3xl font-bold text-white header-font">Admin Dashboard</h1>
+              <h1 className="text-3xl font-bold text-white header-font">Pending Approvals</h1>
             </div>
             <button
               onClick={load}
@@ -151,16 +151,7 @@ export default function AdminDashboard() {
                 >
                   Students ({pendingStudents.length})
                 </button>
-                <button
-                  onClick={() => setActiveTab("educators")}
-                  className={`flex-1 py-3 px-6 rounded-xl font-medium text-sm transition-all duration-200 ${
-                    activeTab === "educators"
-                      ? "bg-white/20 text-white shadow-lg"
-                      : "text-white/70 hover:text-white hover:bg-white/10"
-                  }`}
-                >
-                  Educators ({pendingEducators.length})
-                </button>
+               
               </nav>
             </div>
           </div>
