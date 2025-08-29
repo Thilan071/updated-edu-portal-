@@ -1,22 +1,30 @@
 // app/api/auth/[...nextauth]/route.js
 import NextAuth from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import { findUserByEmail, verifyPassword } from '@/lib/userService';
+import { findUserByEmail, findUserByStudentId, verifyPassword } from '@/lib/userService';
 
 export const authOptions = {
   providers: [
     CredentialsProvider({
       name: 'Credentials',
       credentials: {
-        email: { label: 'Email', type: 'email' },
+        email: { label: 'Email or Student ID', type: 'text' },
         password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials, req) {
         try {
-          const user = await findUserByEmail(credentials.email);
+          const identifier = String(credentials.email).trim();
+          const looksLikeEmail = identifier.includes('@');
+          
+          let user;
+          if (looksLikeEmail) {
+            user = await findUserByEmail(identifier.toLowerCase());
+          } else {
+            user = await findUserByStudentId(identifier.replace(/\s+/g, '').toUpperCase());
+          }
 
           if (!user) {
-            throw new Error('No user found with this email.');
+            throw new Error(looksLikeEmail ? 'No user found with this email.' : 'No user found with this student ID.');
           }
 
           const isValid = await verifyPassword(credentials.password, user.password);
