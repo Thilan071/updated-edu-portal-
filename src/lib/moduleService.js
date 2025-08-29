@@ -566,10 +566,30 @@ export class ModuleService {
         .collection('assignment_templates')
         .doc(assignmentId);
       
+      // Get current assignment data to check for PDF info
+      const assignmentDoc = await assignmentRef.get();
+      const assignmentData = assignmentDoc.data();
+      
+      // If there's a PDF file, optionally delete it from Firebase Storage
+      // Note: We'll keep the file for now as it might be needed for record keeping
+      // Uncomment the following code if you want to delete files on deactivation:
+      /*
+      if (assignmentData?.pdfInfo?.storagePath) {
+        try {
+          const { deletePDF } = await import('./fileUpload');
+          await deletePDF(assignmentData.pdfInfo.storagePath);
+        } catch (deleteError) {
+          console.error('Error deleting PDF file:', deleteError);
+          // Continue with deactivation even if file deletion fails
+        }
+      }
+      */
+      
       await assignmentRef.update({
         isActive: false,
         dueDate: null,
         updatedAt: new Date()
+        // Keep pdfInfo for record keeping purposes
       });
       
       return await this.getAssignmentTemplateById(moduleId, assignmentId);
