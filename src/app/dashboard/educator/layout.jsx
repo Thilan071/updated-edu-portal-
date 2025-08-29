@@ -122,19 +122,23 @@ export default function EducatorDashboardLayout({ children }) {
           <nav className="flex-1 overflow-y-auto">
             <ul className="space-y-2">
               {navItems.map((item) => {
-                const isActive = pathname === item.path || pathname.startsWith(item.path + '/');
+                // Special handling for the Dashboard route
+                const isActive = item.path === '/dashboard/educator' 
+                  ? pathname === '/dashboard/educator'
+                  : pathname === item.path || pathname.startsWith(item.path + '/');
                 return (
                   <li key={item.path}>
-                    <Link href={item.path} aria-current={isActive ? 'page' : undefined}>
-                      <div
-                        className={`flex items-center gap-4 rounded-xl px-4 py-3 text-white transition-all duration-200
-                          ${isActive ? 'bg-white/20 text-white font-semibold' : 'hover:bg-white/10'}`}
-                        title={collapsed ? item.label : undefined}
-                      >
-                        <span className="text-lg">
-                          {collapsed ? item.label.charAt(0) : item.label}
-                        </span>
-                      </div>
+                    <Link 
+                      href={item.path} 
+                      aria-current={isActive ? 'page' : undefined}
+                      className={`flex items-center gap-4 rounded-xl px-4 py-3 text-white transition-all duration-200 ${
+                        isActive ? 'bg-white/20 text-white font-semibold' : 'hover:bg-white/10'
+                      }`}
+                      title={collapsed ? item.label : undefined}
+                    >
+                      <span className="text-lg">
+                        {collapsed ? item.label.charAt(0) : item.label}
+                      </span>
                     </Link>
                   </li>
                 );

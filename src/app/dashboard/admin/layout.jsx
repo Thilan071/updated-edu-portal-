@@ -102,7 +102,10 @@ export default function AdminLayout({ children }) {
           <nav className="flex-1 overflow-y-auto">
             <ul className="space-y-2">
               {links.map(item => {
-                const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+                // Special handling for the base admin dashboard route
+                const isActive = item.href === '/dashboard/admin' 
+                  ? pathname === '/dashboard/admin'
+                  : pathname === item.href || pathname.startsWith(item.href + '/');
                 return (
                   <li key={item.href}>
                     <Link
