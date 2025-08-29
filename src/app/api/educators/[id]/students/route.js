@@ -17,9 +17,10 @@ export async function GET(request, { params }) {
       .get();
     
     const assignedModuleIds = modulesSnapshot.docs.map(doc => doc.data().moduleId);
+    console.log(`Educator has ${assignedModuleIds.length} assigned modules:`, assignedModuleIds);
     
     if (assignedModuleIds.length === 0) {
-      return NextResponse.json({ data: [] }, { status: 200 });
+      return NextResponse.json({ students: [] }, { status: 200 });
     }
     
     // Get all enrollments for courses that contain these modules
@@ -28,9 +29,10 @@ export async function GET(request, { params }) {
       .get();
     
     const courseIds = coursesSnapshot.docs.map(doc => doc.id);
+    console.log(`Found ${courseIds.length} programs with educator's modules:`, courseIds);
     
     if (courseIds.length === 0) {
-      return NextResponse.json({ data: [] }, { status: 200 });
+      return NextResponse.json({ students: [] }, { status: 200 });
     }
     
     // Get all users (students) and check their enrollments
@@ -90,7 +92,7 @@ export async function GET(request, { params }) {
       }
     }
     
-    return NextResponse.json({ data: enrolledStudents }, { status: 200 });
+    return NextResponse.json({ students: enrolledStudents }, { status: 200 });
   } catch (error) {
     console.error('Error fetching educator students:', error);
     return NextResponse.json({ error: 'Failed to fetch educator students' }, { status: 500 });

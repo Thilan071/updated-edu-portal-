@@ -37,7 +37,10 @@ export default function EducatorDashboard() {
   useEffect(() => {
     setIsMounted(true);
     if (session?.user) {
+      console.log('Session user data:', session.user);
       fetchDashboardData();
+    } else {
+      console.log('No session or user data available:', session);
     }
   }, [session]);
 
@@ -50,16 +53,24 @@ export default function EducatorDashboard() {
         throw new Error('User session not available');
       }
 
+      console.log('Fetching dashboard data for user:', session.user.id);
+
       // Fetch educator's modules
+      console.log('Fetching modules...');
       const modulesResponse = await apiClient.educatorAPI.getModules(session.user.id);
+      console.log('Modules response:', modulesResponse);
       const modules = modulesResponse.modules || [];
 
       // Fetch students enrolled in educator's modules
+      console.log('Fetching students...');
       const studentsResponse = await apiClient.educatorAPI.getStudents(session.user.id);
+      console.log('Students response:', studentsResponse);
       const students = studentsResponse.students || [];
 
       // Fetch assessments assigned by this educator
+      console.log('Fetching assessments...');
       const assessmentsResponse = await apiClient.educatorAPI.getAssessments(session.user.id);
+      console.log('Assessments response:', assessmentsResponse);
       const assessments = assessmentsResponse.assessments || [];
 
       // Calculate dashboard metrics
@@ -81,15 +92,23 @@ export default function EducatorDashboard() {
         ).length;
         const atRiskCount = moduleStudents.filter(student => 
           student.moduleProgress.some(progress => 
-            progress.moduleId === module.id && (progress.score || 0) < 50
+            progress.moduleId === module.id && (progress.marks || 0) < 50
           )
         ).length;
         
         return {
-          code: module.code || module.title?.substring(0, 6) || module.name?.substring(0, 6) || 'Module',
+          code: module.code || 'MOD',
+          title: module.title || module.name || 'Module',
           atRisk: atRiskCount,
           topPerformers: completedCount
         };
+      });
+
+      console.log('Dashboard data calculated:', {
+        totalStudents,
+        activeModules,
+        pendingAssessments,
+        modulePerformance
       });
 
       setDashboardData({
@@ -104,7 +123,7 @@ export default function EducatorDashboard() {
       });
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
-      setError('Failed to load dashboard data. Please try again.');
+      setError(`Failed to load dashboard data: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -134,21 +153,23 @@ export default function EducatorDashboard() {
   ];
 
   const chartData = {
-    labels: dashboardData.modulePerformance.map(m => m.code),
+    labels: dashboardData.modulePerformance.map(m => m.title),
     datasets: [
       { 
         label: 'Students At Risk', 
         data: dashboardData.modulePerformance.map(m => m.atRisk), 
-        backgroundColor: 'rgba(255, 59, 48, 0.7)', 
+        backgroundColor: 'rgba(255, 59, 48, 0.8)', 
         borderColor: '#FF3B30', 
-        borderWidth: 1 
+        borderWidth: 2,
+        borderRadius: 4,
       },
       { 
         label: 'Top Performers', 
         data: dashboardData.modulePerformance.map(m => m.topPerformers), 
-        backgroundColor: 'rgba(52, 199, 80, 0.7)', 
+        backgroundColor: 'rgba(52, 199, 80, 0.8)', 
         borderColor: '#34C759', 
-        borderWidth: 1 
+        borderWidth: 2,
+        borderRadius: 4,
       },
     ],
   };
@@ -161,12 +182,28 @@ export default function EducatorDashboard() {
         position: 'bottom',
         labels: {
           color: '#e2e8f0', // Light gray for legend text
+          padding: 20,
+          usePointStyle: true,
         },
       },
       tooltip: {
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
         bodyColor: '#e2e8f0',
         titleColor: '#fff',
+        borderColor: 'rgba(255, 255, 255, 0.2)',
+        borderWidth: 1,
+        callbacks: {
+          title: function(tooltipItems) {
+            const dataIndex = tooltipItems[0].dataIndex;
+            const moduleData = dashboardData.modulePerformance[dataIndex];
+            return moduleData.title;
+          },
+          label: function(context) {
+            const label = context.dataset.label || '';
+            const value = context.parsed.y;
+            return `${label}: ${value} students`;
+          }
+        }
       },
     },
     scales: {
@@ -178,6 +215,7 @@ export default function EducatorDashboard() {
         },
         ticks: {
           color: '#e2e8f0', // Light gray for axis labels
+          stepSize: 1,
         },
       },
       x: {
@@ -187,6 +225,12 @@ export default function EducatorDashboard() {
         },
         ticks: {
           color: '#e2e8f0',
+          maxRotation: 45,
+          minRotation: 0,
+          font: {
+            size: 11,
+            weight: 'normal'
+          }
         },
       },
     },
@@ -236,6 +280,16 @@ export default function EducatorDashboard() {
         <header className={`mb-6 ${isMounted ? 'animated-entry' : 'opacity-0'}`}>
           <h1 className="text-4xl font-bold header-font">Dashboard Overview</h1>
           <p className="text-lg text-gray-300">Quick insights into student performance and activities</p>
+          {session?.user && (
+            <p className="text-sm text-gray-400 mt-2">
+              Logged in as: {session.user.name || session.user.email} (ID: {session.user.id})
+            </p>
+          )}
+          {loading && (
+            <div className="mt-4 p-4 bg-blue-500/20 border border-blue-500/30 rounded-lg text-blue-300">
+              Loading dashboard data...
+            </div>
+          )}
           {error && (
             <div className="mt-4 p-4 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300">
               {error}

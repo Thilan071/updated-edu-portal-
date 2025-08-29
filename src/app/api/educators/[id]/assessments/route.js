@@ -15,6 +15,8 @@ export async function GET(request, { params }) {
       .where('educatorId', '==', educatorId)
       .get();
     
+    console.log(`Found ${assessmentsSnapshot.size} assessments for educator ${educatorId}`);
+    
     const assessments = [];
     
     for (const assessmentDoc of assessmentsSnapshot.docs) {
