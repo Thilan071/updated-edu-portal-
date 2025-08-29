@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import FloatingChatbot from '@/components/FloatingChatbot';
 import {
   LayoutDashboard, UserRoundCog, BookOpen, Wrench, TrendingUp,
-  Repeat, Bell, ChartBar, Menu,
+  Bell, ChartBar, Menu,
 } from 'lucide-react';
 
 const GlobalStyles = () => (
@@ -40,7 +40,6 @@ const links = [
   { name: 'Module Management',  href: '/dashboard/admin/module-management',    icon: <BookOpen size={20} /> },
   { name: 'Assessment Management', href: '/dashboard/admin/assessment-management', icon: <Wrench size={20} /> },
   { name: 'Participation Oversight', href: '/dashboard/admin/participation',   icon: <TrendingUp size={20} /> },
-  { name: 'Repeated Module Tracking', href: '/dashboard/admin/repeated-module-tracking', icon: <Repeat size={20} /> },
   { name: 'Notification Hub',   href: '/dashboard/admin/notifications',        icon: <Bell size={20} /> },
   { name: 'Analytics & Reports',href: '/dashboard/admin/analytics',            icon: <ChartBar size={20} /> },
 ];
