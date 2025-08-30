@@ -861,13 +861,6 @@ You can now use AI grading for this assignment.`);
                       {/* Action Buttons */}
                       <div className="flex justify-between items-center">
                         <div className="flex gap-2">
-                          <Link
-                            href={`/dashboard/educator/submissions/${submission.id}`}
-                            className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center gap-1 text-sm"
-                          >
-                            <Eye className="w-4 h-4" />
-                            View Details
-                          </Link>
                           {submission.fileUrl && (
                             <a
                               href={submission.fileUrl}
@@ -900,15 +893,6 @@ You can now use AI grading for this assignment.`);
                                 Add Reference
                               </button>
                             </>
-                          )}
-                          {submission.status === 'ai_graded' && (
-                            <Link
-                              href={`/dashboard/educator/submissions/${submission.id}/review`}
-                              className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors flex items-center gap-1 text-sm"
-                            >
-                              <CheckCircle className="w-4 h-4" />
-                              Review & Confirm
-                            </Link>
                           )}
                           {submission.hasReferenceSolution && (
                             <button
