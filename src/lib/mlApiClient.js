@@ -3,6 +3,8 @@
  * Connects to the Flask ML backend for AI-powered features
  */
 
+import PredefinedGoalsService from './predefinedGoalsService';
+
 class MLApiClient {
   constructor() {
     this.baseURL = process.env.ML_API_URL || 'http://localhost:5000';
@@ -51,6 +53,17 @@ class MLApiClient {
         goal.module_name === moduleName
       );
 
+      // Check if ML model returned any goals for this module
+      if (!moduleGoals || moduleGoals.length === 0) {
+        console.log(`No ML goals found for module: ${moduleName}, using predefined goals`);
+        
+        // Use predefined goals when ML model doesn't return goals
+        const predefinedGoalsData = PredefinedGoalsService.getGoalsForModule(moduleName);
+        predefinedGoalsData.student_id = studentId;
+        
+        return predefinedGoalsData;
+      }
+
       return {
         goals: moduleGoals,
         completion_stats: goalsData.completion_stats,
@@ -59,8 +72,14 @@ class MLApiClient {
         module_name: moduleName
       };
     } catch (error) {
-      console.error('Error fetching module goals:', error);
-      throw error;
+      console.error('Error fetching module goals from ML model:', error);
+      console.log(`ML model failed for module: ${moduleName}, using predefined goals`);
+      
+      // Use predefined goals when ML model fails completely
+      const predefinedGoalsData = PredefinedGoalsService.getGoalsForModule(moduleName);
+      predefinedGoalsData.student_id = studentId;
+      
+      return predefinedGoalsData;
     }
   }
 
