@@ -853,7 +853,12 @@ You can now use AI grading for this assignment.`);
                         <div className="bg-gray-900 p-3 rounded-lg mb-3">
                           <p className="text-sm text-gray-400 mb-1">AI Analysis:</p>
                           <p className="text-sm text-gray-300 line-clamp-2">
-                            {submission.aiAnalysis.substring(0, 200)}...
+                            {typeof submission.aiAnalysis === 'string' 
+                              ? submission.aiAnalysis.substring(0, 200) + '...'
+                              : typeof submission.aiAnalysis === 'object' 
+                                ? JSON.stringify(submission.aiAnalysis).substring(0, 200) + '...'
+                                : 'AI analysis available (click to view)'
+                            }
                           </p>
                         </div>
                       )}
