@@ -852,14 +852,58 @@ You can now use AI grading for this assignment.`);
                       {submission.aiAnalysis && (
                         <div className="bg-gray-900 p-3 rounded-lg mb-3">
                           <p className="text-sm text-gray-400 mb-1">AI Analysis:</p>
-                          <p className="text-sm text-gray-300 line-clamp-2">
-                            {typeof submission.aiAnalysis === 'string' 
-                              ? submission.aiAnalysis.substring(0, 200) + '...'
-                              : typeof submission.aiAnalysis === 'object' 
-                                ? JSON.stringify(submission.aiAnalysis).substring(0, 200) + '...'
-                                : 'AI analysis available (click to view)'
+                          {(() => {
+                            try {
+                              // Try to parse if it's a JSON string
+                              const analysisData = typeof submission.aiAnalysis === 'string' 
+                                ? JSON.parse(submission.aiAnalysis)
+                                : submission.aiAnalysis;
+                              
+                              return (
+                                <div className="space-y-2">
+                                  {analysisData.progressPercentage && (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs text-gray-400">Progress:</span>
+                                      <span className="text-sm text-green-400 font-medium">{analysisData.progressPercentage}%</span>
+                                    </div>
+                                  )}
+                                  {analysisData.overallFeedback && (
+                                    <p className="text-sm text-gray-300 line-clamp-3">
+                                      {analysisData.overallFeedback}
+                                    </p>
+                                  )}
+                                  {analysisData.completedComponents && analysisData.completedComponents.length > 0 && (
+                                    <div>
+                                      <span className="text-xs text-green-400">✓ Completed: </span>
+                                      <span className="text-xs text-gray-300">
+                                        {analysisData.completedComponents.slice(0, 2).join(', ')}
+                                        {analysisData.completedComponents.length > 2 && ` +${analysisData.completedComponents.length - 2} more`}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {analysisData.missingComponents && analysisData.missingComponents.length > 0 && (
+                                    <div>
+                                      <span className="text-xs text-red-400">⚠ Missing: </span>
+                                      <span className="text-xs text-gray-300">
+                                        {analysisData.missingComponents.slice(0, 2).join(', ')}
+                                        {analysisData.missingComponents.length > 2 && ` +${analysisData.missingComponents.length - 2} more`}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            } catch (error) {
+                              // Fallback for non-JSON or malformed data
+                              return (
+                                <p className="text-sm text-gray-300 line-clamp-2">
+                                  {typeof submission.aiAnalysis === 'string' 
+                                    ? submission.aiAnalysis.substring(0, 200) + '...'
+                                    : 'AI analysis available (click to view)'
+                                  }
+                                </p>
+                              );
                             }
-                          </p>
+                          })()}
                         </div>
                       )}
                       
